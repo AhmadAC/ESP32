@@ -17,12 +17,16 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
 import com.example.mybasicapp.R;
 import com.example.mybasicapp.WebViewActivity;
 import com.example.mybasicapp.adapters.EspDeviceAdapter;
+import com.example.mybasicapp.viewmodels.AppViewModel;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -42,10 +46,11 @@ public class DeviceManagementFragment extends Fragment {
     private RecyclerView recyclerView;
     private TextView textViewEmptyState;
     private EspDeviceAdapter adapter;
-    private List<EspDeviceAdapter.EspDevice> deviceList = new ArrayList<>();
+    private final List<EspDeviceAdapter.EspDevice> deviceList = new ArrayList<>();
     private WifiManager.MulticastLock multicastLock;
     private ExecutorService executorService;
     private Handler mainThreadHandler;
+    private AppViewModel appViewModel;
 
     // Queue for Android 13 and below to prevent "Already resolving" crashes
     private final Queue<NsdServiceInfo> resolveQueue = new LinkedList<>();
@@ -53,6 +58,13 @@ public class DeviceManagementFragment extends Fragment {
 
     // List to hold API 34+ callbacks for proper cleanup
     private final List<NsdManager.ServiceInfoCallback> activeCallbacks = Collections.synchronizedList(new ArrayList<>());
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Initialize ViewModel
+        appViewModel = new ViewModelProvider(requireActivity()).get(AppViewModel.class);
+    }
 
     @Nullable
     @Override
@@ -84,6 +96,15 @@ public class DeviceManagementFragment extends Fragment {
     private void setupRecyclerView() {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         adapter = new EspDeviceAdapter(deviceList, device -> {
+            // When a discovered device is clicked, set it as the active device in the ViewModel
+            String address = device.getIpAddress(); // This is just the IP, which is what the ViewModel stores
+            appViewModel.setActiveEspAddress(address);
+            Toast.makeText(getContext(), device.getName() + " set as active device.", Toast.LENGTH_SHORT).show();
+
+            // Also add it to the saved list of devices if it's not already there
+            appViewModel.addEspDevice(new com.example.mybasicapp.model.EspDevice(device.getName(), device.getIpAddress()));
+
+            // And launch the WebView
             Intent intent = new Intent(requireContext(), WebViewActivity.class);
             intent.putExtra("URL", device.getUrl());
             intent.putExtra("NAME", device.getName());
@@ -113,7 +134,7 @@ public class DeviceManagementFragment extends Fragment {
         if (multicastLock != null && multicastLock.isHeld()) {
             multicastLock.release();
         }
-        if (executorService != null) {
+        if (executorService != null && !executorService.isShutdown()) {
             executorService.shutdown();
         }
         mainThreadHandler.removeCallbacksAndMessages(null);
@@ -131,10 +152,13 @@ public class DeviceManagementFragment extends Fragment {
             if (swipeRefresh.isRefreshing()) {
                 swipeRefresh.setRefreshing(false);
             }
-        }, 5000); // 5-second discovery window
+        }, 8000); // 8-second discovery window
     }
 
     private void startDiscovery() {
+        if (discoveryListener != null) {
+             stopDiscovery();
+        }
         discoveryListener = new NsdManager.DiscoveryListener() {
             @Override
             public void onDiscoveryStarted(String regType) {
@@ -144,9 +168,7 @@ public class DeviceManagementFragment extends Fragment {
             @Override
             public void onServiceFound(NsdServiceInfo service) {
                 Log.d(TAG, "Service Found: " + service.getServiceName());
-                // Filter for ESP32 devices that are advertising a web server
                 if (service.getServiceType().contains("_http._tcp")) {
-                    // You can add more specific filters, e.g., service.getServiceName().toLowerCase().contains("esp")
                     handleServiceResolution(service);
                 }
             }
@@ -165,7 +187,11 @@ public class DeviceManagementFragment extends Fragment {
             @Override
             public void onStartDiscoveryFailed(String serviceType, int errorCode) {
                 Log.e(TAG, "Discovery start failed: Error code:" + errorCode);
-                nsdManager.stopServiceDiscovery(this);
+                if (nsdManager != null) {
+                    try {
+                        nsdManager.stopServiceDiscovery(this);
+                    } catch (Exception e) { Log.e(TAG, "Error stopping discovery on failure.", e); }
+                }
             }
 
             @Override
@@ -179,7 +205,6 @@ public class DeviceManagementFragment extends Fragment {
 
     private void handleServiceResolution(NsdServiceInfo service) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Modern Android 14+ (API 34) approach
             NsdManager.ServiceInfoCallback callback = new NsdManager.ServiceInfoCallback() {
                 @Override
                 public void onServiceInfoCallbackRegistrationFailed(int errorCode) {
@@ -191,13 +216,24 @@ public class DeviceManagementFragment extends Fragment {
                     Log.d(TAG, "API 34+ Service Resolved: " + serviceInfo.getServiceName());
                     addDeviceToList(serviceInfo);
                 }
+
+                @Override
+                public void onServiceLost() {
+                    Log.d(TAG, "API 34+ Service Lost via callback");
+                }
+
+                @Override
+                public void onServiceInfoCallbackUnregistered() {
+                    Log.d(TAG, "API 34+ Callback Unregistered");
+                }
             };
             activeCallbacks.add(callback);
             nsdManager.registerServiceInfoCallback(service, executorService, callback);
         } else {
-            // Legacy approach with a queue to prevent "Already Resolving" exceptions
             synchronized (resolveQueue) {
-                resolveQueue.add(service);
+                if (!resolveQueue.contains(service)) {
+                    resolveQueue.add(service);
+                }
                 if (!isResolving) {
                     resolveNextInQueue();
                 }
@@ -237,7 +273,6 @@ public class DeviceManagementFragment extends Fragment {
     private void finishResolving() {
         synchronized (resolveQueue) {
             isResolving = false;
-            // Check if there are more items to process
             resolveNextInQueue();
         }
     }
@@ -251,7 +286,6 @@ public class DeviceManagementFragment extends Fragment {
             EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(name, ip, port);
 
             mainThreadHandler.post(() -> {
-                // Prevent duplicate entries by checking IP address
                 boolean deviceExists = false;
                 for (EspDeviceAdapter.EspDevice existingDevice : deviceList) {
                     if (existingDevice.getIpAddress().equals(ip)) {
@@ -269,43 +303,53 @@ public class DeviceManagementFragment extends Fragment {
     }
 
     private void updateUI() {
-        // This method must be called from the main thread
-        adapter.notifyDataSetChanged();
-        if (deviceList.isEmpty()) {
-            recyclerView.setVisibility(View.GONE);
-            textViewEmptyState.setVisibility(View.VISIBLE);
-        } else {
-            recyclerView.setVisibility(View.VISIBLE);
-            textViewEmptyState.setVisibility(View.GONE);
-        }
+        if (isAdded() && adapter != null && recyclerView != null && textViewEmptyState != null) {
+            adapter.notifyDataSetChanged();
+            if (deviceList.isEmpty()) {
+                recyclerView.setVisibility(View.GONE);
+                textViewEmptyState.setVisibility(View.VISIBLE);
+            } else {
+                recyclerView.setVisibility(View.VISIBLE);
+                textViewEmptyState.setVisibility(View.GONE);
+            }
 
-        if (swipeRefresh.isRefreshing() && !deviceList.isEmpty()) {
-            swipeRefresh.setRefreshing(false);
+            if (swipeRefresh.isRefreshing() && !deviceList.isEmpty()) {
+                swipeRefresh.setRefreshing(false);
+            }
         }
     }
 
     private void stopDiscovery() {
         if (discoveryListener != null) {
             try {
-                nsdManager.stopServiceDiscovery(discoveryListener);
+                if (nsdManager != null) {
+                    nsdManager.stopServiceDiscovery(discoveryListener);
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Error stopping discovery listener.", e);
             }
             discoveryListener = null;
         }
 
-        // Unregister modern callbacks
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             synchronized (activeCallbacks) {
                 for (NsdManager.ServiceInfoCallback callback : activeCallbacks) {
                     try {
-                        nsdManager.unregisterServiceInfoCallback(callback);
+                        if (nsdManager != null) {
+                            nsdManager.unregisterServiceInfoCallback(callback);
+                        }
                     } catch (Exception e) {
                         Log.e(TAG, "Error unregistering service info callback.", e);
                     }
                 }
                 activeCallbacks.clear();
             }
+        }
+        
+        // Clear the resolve queue
+        synchronized(resolveQueue) {
+            resolveQueue.clear();
+            isResolving = false;
         }
     }
 }
