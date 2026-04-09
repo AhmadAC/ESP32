@@ -19,12 +19,19 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
     }
 
     public static class EspDevice {
-        private final String name, ip;
+        private final String name;
+        private final String ipAddress;
         private final int port;
-        public EspDevice(String name, String ip, int port) { this.name = name; this.ip = ip; this.port = port; }
+
+        public EspDevice(String name, String ipAddress, int port) {
+            this.name = name;
+            this.ipAddress = ipAddress;
+            this.port = port;
+        }
+
         public String getName() { return name; }
-        public String getIpAddress() { return ip; }
-        public String getUrl() { return "http://" + ip + ":" + port; }
+        public String getIpAddress() { return ipAddress; }
+        public String getUrl() { return "http://" + ipAddress + ":" + port; }
     }
 
     public EspDeviceAdapter(List<EspDevice> devices, OnDeviceClickListener listener) {
@@ -35,23 +42,29 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_esp_device, parent, false);
-        return new ViewHolder(v);
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_esp_device, parent, false);
+        return new ViewHolder(view);
     }
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         EspDevice device = devices.get(position);
-        holder.name.setText(device.getName());
-        holder.ip.setText(device.getIpAddress());
+        holder.tvName.setText(device.getName());
+        holder.tvIp.setText(device.getIpAddress());
         holder.itemView.setOnClickListener(v -> listener.onDeviceClick(device));
     }
 
     @Override
-    public int getItemCount() { return devices.size(); }
+    public int getItemCount() {
+        return devices.size();
+    }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
-        TextView name, ip;
-        ViewHolder(View v) { super(v); name = v.findViewById(R.id.tvDeviceName); ip = v.findViewById(R.id.tvDeviceIp); }
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+        TextView tvName, tvIp;
+        public ViewHolder(View itemView) {
+            super(itemView);
+            tvName = itemView.findViewById(R.id.tvDeviceName);
+            tvIp = itemView.findViewById(R.id.tvDeviceIp);
+        }
     }
 }
