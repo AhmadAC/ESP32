@@ -1,75 +1,41 @@
-# File: .github/workflows/android_ci.yml
-
-name: MrCooperESP32 Android CI # <--- UPDATED NAME HERE
+name: MrCooperESP32 Android CI
 
 on:
   push:
-    branches: [ "main", "master" ] # Or your default branch
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches:[ "main" ]
+
+# 1. OPT-IN TO NODE 24: This solves the Node 20 deprecation warnings for all actions.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
-    env:
-      # Define the Gradle version for the wrapper and build.
-      # Choose a version compatible with your Android Gradle Plugin (AGP).
-      # For AGP 8.4.0 (used in root build.gradle), Gradle 8.6 or higher is needed.
-      # Check AGP release notes for compatibility.
-      GRADLE_VERSION_TO_USE: '8.6' # Updated to Gradle 8.6
-
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Set up JDK 17
+    - name: Set up JDK
       uses: actions/setup-java@v4
       with:
-        java-version: '17' # Common for modern Android development
+        java-version: '17' # Adjust to 11 or 21 if your project requires a different version
         distribution: 'temurin'
+        # Do NOT add 'cache: gradle' here to avoid conflicts with setup-gradle
 
-    # This step installs the specified version of Gradle and adds the 'gradle' command to the PATH.
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3 # Using setup-gradle v3
+      # 2. UPGRADE TO v4: More stable version of the gradle action
+      uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: ${{ env.GRADLE_VERSION_TO_USE }}
-        # setup-gradle action has its own caching for Gradle User Home,
-        # which can be beneficial. You can further configure it if needed.
-        # See https://github.com/gradle/actions/blob/main/setup-gradle/README.md#caching
-
-    # This step uses the 'gradle' command (from Setup Gradle step) to initialize
-    # the Gradle wrapper files (gradlew, gradlew.bat, gradle-wrapper.jar, gradle-wrapper.properties)
-    # in the runner's workspace. The generated gradle-wrapper.properties will point to GRADLE_VERSION_TO_USE.
-    - name: Initialize Gradle Wrapper
-      run: gradle wrapper --gradle-version ${{ env.GRADLE_VERSION_TO_USE }} --distribution-type bin
-      # Adding --distribution-type bin to ensure it fetches the binary distribution
+        # 3. DISABLE CACHING: Temporarily bypass the GitHub cache service outage
+        cache-disabled: true
 
     - name: Grant execute permission for gradlew
       run: chmod +x ./gradlew
 
-    # Recommended: Cache Gradle dependencies downloaded by the wrapper.
-    # This cache uses the wrapper files generated in the previous step and other project build files.
-    - name: Cache Gradle packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper/dists
-        # MODIFIED KEY: Added a version suffix '-v1' to help invalidate the cache if needed.
-        # Increment this suffix (e.g., -v2, -v3) or use a dynamic value like ${{ github.run_id }}
-        # if you suspect stale cache issues and need to force a fresh download.
-        key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION_TO_USE }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}-v1
-        restore-keys: |
-          ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION_TO_USE }}-
-
-    - name: Build with Gradle Wrapper
-      # Adding --stacktrace for more detailed error output if the build fails
-      run: ./gradlew assembleDebug --stacktrace
-
-    - name: Upload Debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: MrCoopersESP32 # Name of the artifact
-        path: app/build/outputs/apk/debug/MrCoopersESP32.apk # Path to the APK
-        if-no-files-found: error # Fail if APK not found
+    - name: Build with Gradle
+      # 4. NOTE: If this step still fails after updating the script, double-check your code. 
+      # The refactor to "clipboard handling and overlay shortcuts" likely has a syntax or lint error.
+      run: ./gradlew build
