@@ -1,20 +1,14 @@
-// File: app/build.gradle
-// No changes are strictly required here if your com.google.android.material:material dependency
-// (version 1.1.0 or higher, yours is 1.11.0) is already present, as it includes ViewPager2.
-// Your existing file already looks good for this.
-
 plugins {
     id 'com.android.application'
-    // id 'org.jetbrains.kotlin.android' // This project uses Java, so Kotlin plugin is not needed
 }
 
 android {
-    namespace 'com.example.mybasicapp'
+    namespace 'com.example.esp32manager'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.mybasicapp"
-        minSdk 21
+        applicationId "com.example.esp32manager"
+        minSdk 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -27,53 +21,20 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-        debug {
-            // APK naming is handled by the androidComponents block below
-        }
     }
-
     compileOptions {
-        // Align with the JDK version used in the CI workflow (JDK 17)
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-    // If you plan to use View Binding (optional, but recommended for easier view access in fragments/activities):
-    // buildFeatures {
-    // viewBinding true
-    // }
-}
-
-// This block customizes the output APK name for debug builds.
-// It was previously (and incorrectly) in the root build.gradle.
-androidComponents {
-    onVariants(selector().withBuildType("debug")) { variant ->
-        variant.outputs.forEach { output ->
-            // Ensure we are modifying the main APK output
-            // Correctly compare the outputType enum directly
-            if (output.outputType == com.android.build.api.variant.VariantOutputConfiguration.OutputType.SINGLE) {
-                output.outputFileName.set("MrCoopersESP32.apk")
-            }
-        }
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
 dependencies {
-    // Use 'androidx.core:core' for Java projects. 'core-ktx' is for Kotlin.
-    implementation 'androidx.core:core:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0' // Includes ViewPager2
+    implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-
-    // ViewModel and LiveData (Lifecycle components)
-    implementation "androidx.lifecycle:lifecycle-viewmodel:2.7.0"
-    implementation "androidx.lifecycle:lifecycle-livedata:2.7.0"
-    implementation "androidx.lifecycle:lifecycle-common-java8:2.7.0" // For Java 8 language features like default methods in interfaces
-
-
-    // Add OkHttp dependency, required for WebSocketService.java.
-    // This was previously (and incorrectly) in the root build.gradle's dependencies.
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation 'androidx.activity:activity:1.8.2'
+    
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
