@@ -1,4 +1,4 @@
-package com.example.esp32manager;
+package com.example.mybasicapp; // <-- CORRECTED
 
 import android.os.Bundle;
 import android.view.View;
@@ -29,12 +29,7 @@ public class WebViewActivity extends AppCompatActivity {
             tvTitle.setText(name);
         }
 
-        findViewById(R.id.btnBack).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finish();
-            }
-        });
+        findViewById(R.id.btnBack).setOnClickListener(v -> finish());
 
         webView = findViewById(R.id.webView);
         ProgressBar progressBar = findViewById(R.id.progressBar);

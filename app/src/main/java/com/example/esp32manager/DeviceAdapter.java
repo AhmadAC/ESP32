@@ -1,4 +1,4 @@
-package com.example.esp32manager;
+package com.example.mybasicapp; // <-- CORRECTED
 
 import android.view.LayoutInflater;
 import android.view.View;
@@ -6,6 +6,9 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.example.mybasicapp.model.EspDevice; // <-- CORRECTED (assuming you move the model)
+
 import java.util.List;
 
 public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder> {
@@ -25,7 +28,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_esp_device, parent, false);
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.list_item_esp_device, parent, false); // <-- Use correct layout name
         return new ViewHolder(view);
     }
 
@@ -33,14 +36,9 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.ViewHolder
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         EspDevice device = devices.get(position);
         holder.tvName.setText(device.getName());
-        holder.tvIp.setText(device.getIpAddress());
+        holder.tvIp.setText(device.getAddress()); // <-- Use getAddress() from the correct EspDevice model
         
-        holder.itemView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onItemClick(device);
-            }
-        });
+        holder.itemView.setOnClickListener(v -> listener.onItemClick(device));
     }
 
     @Override
