@@ -295,4 +295,17 @@ public class DeviceManagementFragment extends Fragment {
         }
 
         // Unregister modern callbacks
-        if
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            synchronized (activeCallbacks) {
+                for (NsdManager.ServiceInfoCallback callback : activeCallbacks) {
+                    try {
+                        nsdManager.unregisterServiceInfoCallback(callback);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error unregistering service info callback.", e);
+                    }
+                }
+                activeCallbacks.clear();
+            }
+        }
+    }
+}
