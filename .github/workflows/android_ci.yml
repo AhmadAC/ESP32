@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches: [ "main" ] # <-- Added the missing space here
+    branches: [ "main" ]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -29,4 +29,4 @@ jobs:
         cache-disabled: true
 
     - name: Build with Gradle
-      run: ./gradlew build
+      run: gradle build
