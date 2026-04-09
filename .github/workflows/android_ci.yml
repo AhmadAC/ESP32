@@ -4,9 +4,8 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches:[ "main" ]
+    branches: [ "main" ] # <-- Added the missing space here
 
-# 1. OPT-IN TO NODE 24: This solves the Node 20 deprecation warnings for all actions.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -21,21 +20,16 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
-        java-version: '17' # Adjust to 11 or 21 if your project requires a different version
+        java-version: '17' 
         distribution: 'temurin'
-        # Do NOT add 'cache: gradle' here to avoid conflicts with setup-gradle
 
     - name: Setup Gradle
-      # 2. UPGRADE TO v4: More stable version of the gradle action
       uses: gradle/actions/setup-gradle@v4
       with:
-        # 3. DISABLE CACHING: Temporarily bypass the GitHub cache service outage
         cache-disabled: true
 
     - name: Grant execute permission for gradlew
       run: chmod +x ./gradlew
 
     - name: Build with Gradle
-      # 4. NOTE: If this step still fails after updating the script, double-check your code. 
-      # The refactor to "clipboard handling and overlay shortcuts" likely has a syntax or lint error.
       run: ./gradlew build
