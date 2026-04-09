@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'com.example.mybasicapp'
-    compileSdk 34 // Targeted for S21+ / Android 14
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.example.mybasicapp"
@@ -33,7 +33,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     
-    // FIX: This single line resolves all 'package okhttp3 does not exist' errors!
+    // THIS LINE IS CRITICAL - Fixes okhttp3 errors
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     testImplementation 'junit:junit:4.13.2'
