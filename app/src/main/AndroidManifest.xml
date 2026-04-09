@@ -2,67 +2,36 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Standard Network Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <!-- Permissions for mDNS (Network Service Discovery) -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
-    <!-- Permission for Notifications (Required for Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-
-    <!-- Permissions for Foreground Service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- Allow specific types, HttpPollingService already uses dataSync -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- Add mediaPlayback for AlertSoundService -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-
-
-    <!-- Permissions for custom sound -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" /> <!-- Used by AlertSoundService -->
-    <!-- For Android 12 (API 32) and below to read audio files -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- For Android 13 (API 33) and above, for specific media types -->
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-
-
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyBasicApp"
-        tools:targetApi="34"
-        android:usesCleartextTraffic="true">
-        <!-- usesCleartextTraffic="true" is important for local http:// and ws:// connections -->
-
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31">
+        
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"> <!-- singleTop is good if opening from notification -->
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".HttpPollingService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-            <!-- foregroundServiceType is required for services targeting Android Q (API 29) and above -->
-
-        <service
-            android:name=".AlertSoundService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
-
+        <activity
+            android:name=".WebViewActivity"
+            android:exported="false" />
     </application>
 
 </manifest>
