@@ -42,7 +42,7 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_esp_device, parent, false);
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.list_item_esp_device, parent, false);
         return new ViewHolder(view);
     }
 
