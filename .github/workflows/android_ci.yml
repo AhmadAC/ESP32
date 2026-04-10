@@ -30,3 +30,9 @@ jobs:
 
     - name: Build with Gradle
       run: gradle build
+
+    - name: Upload APK Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-apks
+        path: app/build/outputs/apk/**/*.apk
