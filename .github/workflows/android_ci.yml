@@ -29,8 +29,4 @@ jobs:
         cache-disabled: true
 
     - name: Build with Gradle
-<<<<<<< HEAD
       run: gradle build
-=======
-      run: gradle build
->>>>>>> f76fd8a70b1354f58874a8109b27e2e970874786
