@@ -28,11 +28,6 @@ jobs:
       with:
         cache-disabled: true
 
-    - name: Build with Gradle
-      run: gradle build
-
-    - name: Upload APK Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-apks
-        path: app/build/outputs/apk/**/*.apk
+    - name: Build Debug APK
+      # Changed from 'gradle build' to 'gradle assembleDebug' to only generate the single installable debug APK
+      run: gradle assembleDebug
