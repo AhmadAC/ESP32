@@ -1,5 +1,7 @@
+// app\src\main\java\com\example\mybasicapp\HttpPollingService.java
 package com.example.mybasicapp;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -21,9 +23,8 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
-import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.core.app.NotificationCompat; // ADDED IMPORT
 
@@ -398,6 +399,7 @@ public class HttpPollingService extends Service {
     }
 
 
+    @SuppressLint("MissingPermission")
     private void startForegroundServiceWithNotification(String statusText) {
         Log.d(TAG, "startForegroundServiceWithNotification: statusText='" + statusText + "'");
         Intent notificationIntent = new Intent(this, MainActivity.class); // Tapping notification opens MainActivity
@@ -428,6 +430,7 @@ public class HttpPollingService extends Service {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private void updateServiceNotification(String text) {
         Log.d(TAG, "updateServiceNotification: text='" + text + "'. isServiceRunningAsForeground=" + isServiceRunningAsForeground);
         if (!isServiceRunningAsForeground) { // Only update if actually in foreground mode
@@ -509,10 +512,11 @@ public class HttpPollingService extends Service {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private void showDataNotification(String title, String message, int notificationId) {
         // Check for POST_NOTIFICATIONS permission (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 Log.w(TAG, "showDataNotification: POST_NOTIFICATIONS permission NOT granted. Cannot show alert notification.");
                 // Optionally send a broadcast so MainActivity can inform user or request permission
                 return;

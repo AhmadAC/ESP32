@@ -1,5 +1,7 @@
+// app\src\main\java\com\example\mybasicapp\AlertSoundService.java
 package com.example.mybasicapp;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -102,6 +104,7 @@ public class AlertSoundService extends Service {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private void startForegroundWithNotificationForPlayback() {
         Log.d(TAG, "startForegroundWithNotificationForPlayback called");
         // Intent to open MainActivity when notification is tapped
