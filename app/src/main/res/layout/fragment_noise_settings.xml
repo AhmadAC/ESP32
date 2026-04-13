@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- app\src\main\res\layout\fragment_noise_settings.xml -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -48,13 +49,11 @@
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:text="@string/refresh_button_label"
             app:icon="@drawable/ic_refresh"
-            android:layout_marginStart="16dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBaseline_toBaselineOf="@id/textViewCurrentEspThresholdLabel"
-            app:layout_constraintStart_toEndOf="@id/textViewCurrentEspThresholdValue"
-            app:layout_constraintHorizontal_bias="1.0"
+            app:layout_constraintTop_toBottomOf="@id/textViewCurrentEspThresholdLabel"
+            app:layout_constraintStart_toStartOf="parent"
             tools:ignore="SpeakableTextPresentCheck" />
 
 
@@ -66,7 +65,7 @@
             android:layout_marginTop="16dp"
             android:hint="@string/new_threshold_hint_calibrated"
             app:helperText="@string/threshold_helper_text_calibrated"
-            app:layout_constraintTop_toBottomOf="@id/textViewCurrentEspThresholdLabel"
+            app:layout_constraintTop_toBottomOf="@id/buttonRefreshEspThreshold"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
