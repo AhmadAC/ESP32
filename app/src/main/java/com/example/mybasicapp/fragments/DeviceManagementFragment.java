@@ -166,7 +166,7 @@ public class DeviceManagementFragment extends Fragment {
         input.setText(device.getName());
         input.setHint("Enter a friendly name");
         FrameLayout container = new FrameLayout(requireContext());
-        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
         params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
         input.setLayoutParams(params);
@@ -193,7 +193,7 @@ public class DeviceManagementFragment extends Fragment {
         input.setText(suggestedKeyword);
         input.setHint("e.g., HP, ApeosPort");
         FrameLayout container = new FrameLayout(requireContext());
-        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
         params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
         input.setLayoutParams(params);
@@ -463,4 +463,9 @@ public class DeviceManagementFragment extends Fragment {
         }
         
         // Clear the resolve queue
-        syn
+        synchronized (resolveQueue) {
+            resolveQueue.clear();
+            isResolving = false;
+        }
+    }
+}
