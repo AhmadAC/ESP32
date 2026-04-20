@@ -1,4 +1,3 @@
-// app\src\main\java\com\example\mybasicapp\adapters\EspDeviceAdapter.java
 package com.example.mybasicapp.adapters;
 
 import android.view.LayoutInflater;
@@ -61,9 +60,9 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
         EspDevice device = devices.get(position);
         holder.tvName.setText(device.getName());
         holder.tvIp.setText(device.getIpAddress());
-        
+
         holder.itemView.setOnClickListener(v -> listener.onDeviceClick(device));
-        
+
         holder.itemView.setOnLongClickListener(v -> {
             longClickListener.onDeviceLongClick(device);
             return true; // Consume the long-click

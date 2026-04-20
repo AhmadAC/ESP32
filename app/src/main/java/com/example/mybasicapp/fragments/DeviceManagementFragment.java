@@ -9,14 +9,19 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.TextView;
-import android.widget.Toast; // ADDED IMPORT
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -30,6 +35,7 @@ import com.example.mybasicapp.viewmodels.AppViewModel;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -46,6 +52,7 @@ public class DeviceManagementFragment extends Fragment {
     private SwipeRefreshLayout swipeRefresh;
     private RecyclerView recyclerView;
     private TextView textViewEmptyState;
+    private Button buttonClearFilters;
     private EspDeviceAdapter adapter;
     private final List<EspDeviceAdapter.EspDevice> deviceList = new ArrayList<>();
     private WifiManager.MulticastLock multicastLock;
@@ -87,6 +94,20 @@ public class DeviceManagementFragment extends Fragment {
         swipeRefresh = view.findViewById(R.id.swipeRefresh);
         recyclerView = view.findViewById(R.id.recyclerViewDevices);
         textViewEmptyState = view.findViewById(R.id.textViewEmptyState);
+        buttonClearFilters = view.findViewById(R.id.buttonClearFilters);
+
+        buttonClearFilters.setOnClickListener(v -> {
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("Clear All Filters?")
+                    .setMessage("This will unhide all devices and keywords. Are you sure?")
+                    .setPositiveButton("Yes, Clear", (dialog, which) -> {
+                        appViewModel.clearAllFilters();
+                        Toast.makeText(getContext(), "Filters cleared. Re-scanning...", Toast.LENGTH_SHORT).show();
+                        restartDiscovery();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
 
         setupRecyclerView();
 
@@ -96,42 +117,120 @@ public class DeviceManagementFragment extends Fragment {
 
     private void setupRecyclerView() {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
-        adapter = new EspDeviceAdapter(deviceList, device -> {
-            // When a discovered device is clicked, set it as the active device in the ViewModel
-            String address = device.getIpAddress(); // This is just the IP, which is what the ViewModel stores
-            appViewModel.setActiveEspAddress(address);
-            Toast.makeText(getContext(), device.getName() + " set as active device.", Toast.LENGTH_SHORT).show();
+        adapter = new EspDeviceAdapter(deviceList,
+                // OnClickListener
+                device -> {
+                    String address = device.getIpAddress();
+                    appViewModel.setActiveEspAddress(address);
+                    Toast.makeText(getContext(), "\"" + device.getName() + "\" set as active device.", Toast.LENGTH_SHORT).show();
 
-            // Also add it to the saved list of devices if it's not already there
-            appViewModel.addEspDevice(new com.example.mybasicapp.model.EspDevice(device.getName(), device.getIpAddress()));
+                    appViewModel.addEspDevice(new com.example.mybasicapp.model.EspDevice(device.getName(), device.getIpAddress()));
 
-            // And launch the WebView
-            Intent intent = new Intent(requireContext(), WebViewActivity.class);
-            intent.putExtra("URL", device.getUrl());
-            intent.putExtra("NAME", device.getName());
-            startActivity(intent);
-        });
+                    Intent intent = new Intent(requireContext(), WebViewActivity.class);
+                    intent.putExtra("URL", device.getUrl());
+                    intent.putExtra("NAME", device.getName());
+                    startActivity(intent);
+                },
+                // OnDeviceLongClickListener
+                this::showDeviceOptionsDialog
+        );
         recyclerView.setAdapter(adapter);
+    }
+
+    private void showDeviceOptionsDialog(EspDeviceAdapter.EspDevice device) {
+        final CharSequence[] items = {
+                "Rename Device",
+                "Hide This IP (" + device.getIpAddress() + ")",
+                "Hide by Keyword..."
+        };
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Options for \"" + device.getName() + "\"")
+                .setItems(items, (dialog, item) -> {
+                    if (item == 0) { // Rename
+                        showRenameDialog(device);
+                    } else if (item == 1) { // Hide IP
+                        appViewModel.addBannedIp(device.getIpAddress());
+                        Toast.makeText(getContext(), "IP " + device.getIpAddress() + " will be hidden on next scan.", Toast.LENGTH_SHORT).show();
+                        restartDiscovery();
+                    } else if (item == 2) { // Hide Keyword
+                        showKeywordDialog(device);
+                    }
+                })
+                .show();
+    }
+
+    private void showRenameDialog(EspDeviceAdapter.EspDevice device) {
+        final EditText input = new EditText(requireContext());
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setText(device.getName());
+        input.setHint("Enter a friendly name");
+        FrameLayout container = new FrameLayout(requireContext());
+        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        input.setLayoutParams(params);
+        container.addView(input);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Rename Device")
+                .setView(container)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String newName = input.getText().toString().trim();
+                    appViewModel.setCustomName(device.getIpAddress(), newName);
+                    Toast.makeText(getContext(), "Device renamed. Re-scanning...", Toast.LENGTH_SHORT).show();
+                    restartDiscovery();
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> dialog.cancel())
+                .show();
+    }
+
+    private void showKeywordDialog(EspDeviceAdapter.EspDevice device) {
+        final EditText input = new EditText(requireContext());
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        String originalName = device.getOriginalName();
+        String suggestedKeyword = originalName.split("[-\\s]")[0];
+        input.setText(suggestedKeyword);
+        input.setHint("e.g., HP, ApeosPort");
+        FrameLayout container = new FrameLayout(requireContext());
+        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        input.setLayoutParams(params);
+        container.addView(input);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Hide by Keyword")
+                .setView(container)
+                .setPositiveButton("Hide", (dialog, which) -> {
+                    String keyword = input.getText().toString().trim();
+                    if (!keyword.isEmpty()) {
+                        appViewModel.addBannedKeyword(keyword);
+                        Toast.makeText(getContext(), "Devices with '" + keyword + "' will be hidden on next scan.", Toast.LENGTH_LONG).show();
+                        restartDiscovery();
+                    } else {
+                        Toast.makeText(getContext(), "Keyword cannot be empty.", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> dialog.cancel())
+                .show();
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        // Start fresh scan when the user returns to this screen
         restartDiscovery();
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        // Stop scanning when the screen is not visible to save battery
         stopDiscovery();
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        // Release resources
         if (multicastLock != null && multicastLock.isHeld()) {
             multicastLock.release();
         }
@@ -143,12 +242,11 @@ public class DeviceManagementFragment extends Fragment {
 
     private void restartDiscovery() {
         mainThreadHandler.post(() -> swipeRefresh.setRefreshing(true));
-        stopDiscovery(); // Ensure any old listeners are cleared
+        stopDiscovery();
         deviceList.clear();
         updateUI();
         startDiscovery();
 
-        // Add a timeout to stop the refreshing indicator after a while
         mainThreadHandler.postDelayed(() -> {
             if (swipeRefresh.isRefreshing()) {
                 swipeRefresh.setRefreshing(false);
@@ -177,7 +275,6 @@ public class DeviceManagementFragment extends Fragment {
             @Override
             public void onServiceLost(NsdServiceInfo service) {
                 Log.w(TAG, "Service Lost: " + service.getServiceName());
-                // Future enhancement: remove lost devices from the list
             }
 
             @Override
@@ -280,11 +377,22 @@ public class DeviceManagementFragment extends Fragment {
 
     private void addDeviceToList(NsdServiceInfo serviceInfo) {
         if (serviceInfo.getHost() != null) {
-            String name = serviceInfo.getServiceName();
+            String originalName = serviceInfo.getServiceName();
             String ip = serviceInfo.getHost().getHostAddress();
+
+            // APPLY FILTERS
+            if (appViewModel.isIpBanned(ip) || appViewModel.matchesBannedKeyword(originalName)) {
+                Log.d(TAG, "Device filtered out: " + originalName + " (" + ip + ")");
+                return;
+            }
+
             int port = serviceInfo.getPort();
-            
-            EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(name, ip, port);
+
+            // APPLY CUSTOM NAME
+            String customName = appViewModel.getCustomName(ip);
+            String displayName = (customName != null && !customName.isEmpty()) ? customName : originalName;
+
+            EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(displayName, originalName, ip, port);
 
             mainThreadHandler.post(() -> {
                 boolean deviceExists = false;
@@ -297,6 +405,8 @@ public class DeviceManagementFragment extends Fragment {
 
                 if (!deviceExists) {
                     deviceList.add(newDevice);
+                    // Sort list alphabetically by display name
+                    Collections.sort(deviceList, Comparator.comparing(EspDeviceAdapter.EspDevice::getName, String.CASE_INSENSITIVE_ORDER));
                     updateUI();
                 }
             });
@@ -316,6 +426,11 @@ public class DeviceManagementFragment extends Fragment {
 
             if (swipeRefresh.isRefreshing() && !deviceList.isEmpty()) {
                 swipeRefresh.setRefreshing(false);
+            }
+
+            // Show/hide clear filters button
+            if (buttonClearFilters != null) {
+                 buttonClearFilters.setVisibility(appViewModel.hasFilters() ? View.VISIBLE : View.GONE);
             }
         }
     }
@@ -348,9 +463,4 @@ public class DeviceManagementFragment extends Fragment {
         }
         
         // Clear the resolve queue
-        synchronized(resolveQueue) {
-            resolveQueue.clear();
-            isResolving = false;
-        }
-    }
-}
+        syn

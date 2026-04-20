@@ -1,4 +1,3 @@
-// app\src\main\java\com\example\mybasicapp\viewmodels\AppViewModel.java
 package com.example.mybasicapp.viewmodels;
 
 import android.app.Application;
@@ -11,7 +10,7 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
-import com.example.mybasicapp.model.EspDevice; 
+import com.example.mybasicapp.model.EspDevice;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -25,12 +24,12 @@ public class AppViewModel extends AndroidViewModel {
     private static final String TAG = "AppViewModel_DBG";
 
     private static final String PREFS_APP_VIEW_MODEL = "AppViewModelPrefs";
-    private static final String PREF_ESP_DEVICES_LIST = "esp_devices_list_v2"; 
+    private static final String PREF_ESP_DEVICES_LIST = "esp_devices_list_v2";
     private static final String PREF_ACTIVE_ESP_ADDRESS = "active_esp_address_v2";
     private static final String PREF_LAST_SERVICE_STATUS = "last_service_status";
     private static final String PREF_LAST_SENSOR_JSON_DATA = "last_sensor_json_data";
     
-    // New Preferences for filtering and renaming
+    // Preferences for filtering and renaming
     private static final String PREF_BANNED_KEYWORDS = "banned_keywords";
     private static final String PREF_BANNED_IPS = "banned_ips";
     private static final String PREF_CUSTOM_NAMES = "custom_names";
@@ -38,7 +37,7 @@ public class AppViewModel extends AndroidViewModel {
     private final MutableLiveData<List<EspDevice>> espDevicesLiveData = new MutableLiveData<>(new ArrayList<>());
     private final MutableLiveData<String> activeEspAddressLiveData = new MutableLiveData<>();
     private final MutableLiveData<String> lastServiceStatusLiveData = new MutableLiveData<>();
-    private final MutableLiveData<String> lastSensorJsonDataLiveData = new MutableLiveData<>(); 
+    private final MutableLiveData<String> lastSensorJsonDataLiveData = new MutableLiveData<>();
 
     private final SharedPreferences sharedPreferences;
 
@@ -153,7 +152,7 @@ public class AppViewModel extends AndroidViewModel {
         }
         if (!exists) {
             currentList.add(device);
-            espDevicesLiveData.setValue(new ArrayList<>(currentList)); 
+            espDevicesLiveData.setValue(new ArrayList<>(currentList));
             saveEspDevicesToPrefs();
             if (currentList.size() == 1 && (activeEspAddressLiveData.getValue() == null || activeEspAddressLiveData.getValue().isEmpty())) {
                 setActiveEspAddress(device.getAddress());
@@ -191,7 +190,7 @@ public class AppViewModel extends AndroidViewModel {
             }
         }
     }
-    
+
     public void setEspDevicesList(List<EspDevice> newDevicesList) {
         List<EspDevice> uniqueList = new ArrayList<>();
         List<String> addresses = new ArrayList<>();
