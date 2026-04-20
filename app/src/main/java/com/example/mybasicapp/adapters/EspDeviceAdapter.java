@@ -1,3 +1,4 @@
+// app\src\main\java\com\example\mybasicapp\adapters\EspDeviceAdapter.java
 package com.example.mybasicapp.adapters;
 
 import android.view.LayoutInflater;
@@ -13,30 +14,39 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
 
     private final List<EspDevice> devices;
     private final OnDeviceClickListener listener;
+    private final OnDeviceLongClickListener longClickListener;
 
     public interface OnDeviceClickListener {
         void onDeviceClick(EspDevice device);
     }
 
+    public interface OnDeviceLongClickListener {
+        void onDeviceLongClick(EspDevice device);
+    }
+
     public static class EspDevice {
-        private final String name;
+        private final String displayName;
+        private final String originalName;
         private final String ipAddress;
         private final int port;
 
-        public EspDevice(String name, String ipAddress, int port) {
-            this.name = name;
+        public EspDevice(String displayName, String originalName, String ipAddress, int port) {
+            this.displayName = displayName;
+            this.originalName = originalName;
             this.ipAddress = ipAddress;
             this.port = port;
         }
 
-        public String getName() { return name; }
+        public String getName() { return displayName; }
+        public String getOriginalName() { return originalName; }
         public String getIpAddress() { return ipAddress; }
         public String getUrl() { return "http://" + ipAddress + ":" + port; }
     }
 
-    public EspDeviceAdapter(List<EspDevice> devices, OnDeviceClickListener listener) {
+    public EspDeviceAdapter(List<EspDevice> devices, OnDeviceClickListener listener, OnDeviceLongClickListener longClickListener) {
         this.devices = devices;
         this.listener = listener;
+        this.longClickListener = longClickListener;
     }
 
     @NonNull
@@ -51,7 +61,13 @@ public class EspDeviceAdapter extends RecyclerView.Adapter<EspDeviceAdapter.View
         EspDevice device = devices.get(position);
         holder.tvName.setText(device.getName());
         holder.tvIp.setText(device.getIpAddress());
+        
         holder.itemView.setOnClickListener(v -> listener.onDeviceClick(device));
+        
+        holder.itemView.setOnLongClickListener(v -> {
+            longClickListener.onDeviceLongClick(device);
+            return true; // Consume the long-click
+        });
     }
 
     @Override

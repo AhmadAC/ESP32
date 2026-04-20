@@ -1,3 +1,4 @@
+// app\src\main\java\com\example\mybasicapp\viewmodels\AppViewModel.java
 package com.example.mybasicapp.viewmodels;
 
 import android.app.Application;
@@ -10,7 +11,7 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
-import com.example.mybasicapp.model.EspDevice; // We will create this POJO next
+import com.example.mybasicapp.model.EspDevice; 
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -23,18 +24,21 @@ import java.util.Objects;
 public class AppViewModel extends AndroidViewModel {
     private static final String TAG = "AppViewModel_DBG";
 
-    // SharedPreferences for AppViewModel specific data (distinct from service or fragment prefs if needed)
     private static final String PREFS_APP_VIEW_MODEL = "AppViewModelPrefs";
-    private static final String PREF_ESP_DEVICES_LIST = "esp_devices_list_v2"; // Changed key to avoid conflict with old format
+    private static final String PREF_ESP_DEVICES_LIST = "esp_devices_list_v2"; 
     private static final String PREF_ACTIVE_ESP_ADDRESS = "active_esp_address_v2";
     private static final String PREF_LAST_SERVICE_STATUS = "last_service_status";
     private static final String PREF_LAST_SENSOR_JSON_DATA = "last_sensor_json_data";
-
+    
+    // New Preferences for filtering and renaming
+    private static final String PREF_BANNED_KEYWORDS = "banned_keywords";
+    private static final String PREF_BANNED_IPS = "banned_ips";
+    private static final String PREF_CUSTOM_NAMES = "custom_names";
 
     private final MutableLiveData<List<EspDevice>> espDevicesLiveData = new MutableLiveData<>(new ArrayList<>());
     private final MutableLiveData<String> activeEspAddressLiveData = new MutableLiveData<>();
     private final MutableLiveData<String> lastServiceStatusLiveData = new MutableLiveData<>();
-    private final MutableLiveData<String> lastSensorJsonDataLiveData = new MutableLiveData<>(); // To hold raw JSON from ESP
+    private final MutableLiveData<String> lastSensorJsonDataLiveData = new MutableLiveData<>(); 
 
     private final SharedPreferences sharedPreferences;
 
@@ -47,6 +51,89 @@ public class AppViewModel extends AndroidViewModel {
         loadLastSensorDataFromPrefs();
     }
 
+    // --- Filter & Rename Logic ---
+
+    public boolean isIpBanned(String ip) {
+        return getBannedIps().contains(ip);
+    }
+
+    public boolean matchesBannedKeyword(String name) {
+        if (name == null) return false;
+        String lowerName = name.toLowerCase();
+        for (String kw : getBannedKeywords()) {
+            if (lowerName.contains(kw.toLowerCase())) return true;
+        }
+        return false;
+    }
+
+    public void addBannedIp(String ip) {
+        List<String> ips = getBannedIps();
+        if (!ips.contains(ip)) {
+            ips.add(ip);
+            sharedPreferences.edit().putString(PREF_BANNED_IPS, new JSONArray(ips).toString()).apply();
+        }
+    }
+
+    public void addBannedKeyword(String kw) {
+        List<String> kws = getBannedKeywords();
+        if (!kws.contains(kw)) {
+            kws.add(kw);
+            sharedPreferences.edit().putString(PREF_BANNED_KEYWORDS, new JSONArray(kws).toString()).apply();
+        }
+    }
+
+    private List<String> getBannedIps() {
+        List<String> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(sharedPreferences.getString(PREF_BANNED_IPS, "[]"));
+            for(int i = 0; i < arr.length(); i++) list.add(arr.getString(i));
+        } catch (JSONException ignored) {}
+        return list;
+    }
+
+    private List<String> getBannedKeywords() {
+        List<String> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(sharedPreferences.getString(PREF_BANNED_KEYWORDS, "[]"));
+            for(int i = 0; i < arr.length(); i++) list.add(arr.getString(i));
+        } catch (JSONException ignored) {}
+        return list;
+    }
+
+    public boolean hasFilters() {
+        return !getBannedIps().isEmpty() || !getBannedKeywords().isEmpty();
+    }
+
+    public void clearAllFilters() {
+        sharedPreferences.edit()
+                .remove(PREF_BANNED_IPS)
+                .remove(PREF_BANNED_KEYWORDS)
+                .apply();
+    }
+
+    public String getCustomName(String ip) {
+        String jsonStr = sharedPreferences.getString(PREF_CUSTOM_NAMES, "{}");
+        try {
+            JSONObject json = new JSONObject(jsonStr);
+            return json.optString(ip, null);
+        } catch (JSONException e) { 
+            return null; 
+        }
+    }
+
+    public void setCustomName(String ip, String name) {
+        String jsonStr = sharedPreferences.getString(PREF_CUSTOM_NAMES, "{}");
+        try {
+            JSONObject json = new JSONObject(jsonStr);
+            if (name == null || name.trim().isEmpty()) {
+                json.remove(ip);
+            } else {
+                json.put(ip, name.trim());
+            }
+            sharedPreferences.edit().putString(PREF_CUSTOM_NAMES, json.toString()).apply();
+        } catch (JSONException ignored) { }
+    }
+
     // --- ESP Devices List ---
     public LiveData<List<EspDevice>> getEspDevicesLiveData() {
         return espDevicesLiveData;
@@ -57,7 +144,6 @@ public class AppViewModel extends AndroidViewModel {
         if (currentList == null) {
             currentList = new ArrayList<>();
         }
-        // Avoid duplicates based on address
         boolean exists = false;
         for (EspDevice existingDevice : currentList) {
             if (existingDevice.getAddress().equalsIgnoreCase(device.getAddress())) {
@@ -67,9 +153,8 @@ public class AppViewModel extends AndroidViewModel {
         }
         if (!exists) {
             currentList.add(device);
-            espDevicesLiveData.setValue(new ArrayList<>(currentList)); // Post a new list to trigger observers
+            espDevicesLiveData.setValue(new ArrayList<>(currentList)); 
             saveEspDevicesToPrefs();
-            // If this is the first device added and no active ESP, make it active
             if (currentList.size() == 1 && (activeEspAddressLiveData.getValue() == null || activeEspAddressLiveData.getValue().isEmpty())) {
                 setActiveEspAddress(device.getAddress());
             }
@@ -81,11 +166,9 @@ public class AppViewModel extends AndroidViewModel {
     public void updateEspDevice(int index, EspDevice device) {
         List<EspDevice> currentList = espDevicesLiveData.getValue();
         if (currentList != null && index >= 0 && index < currentList.size()) {
-            // Check if new address conflicts with an existing different device
             for (int i=0; i < currentList.size(); i++) {
                 if (i != index && currentList.get(i).getAddress().equalsIgnoreCase(device.getAddress())) {
                     Log.w(TAG, "Cannot update device at index " + index + ": new address " + device.getAddress() + " conflicts with existing device.");
-                    // Optionally notify UI about the conflict
                     return;
                 }
             }
@@ -95,7 +178,6 @@ public class AppViewModel extends AndroidViewModel {
         }
     }
 
-
     public void removeEspDevice(EspDevice deviceToRemove) {
         List<EspDevice> currentList = espDevicesLiveData.getValue();
         if (currentList != null) {
@@ -103,7 +185,6 @@ public class AppViewModel extends AndroidViewModel {
             if (removed) {
                 espDevicesLiveData.setValue(new ArrayList<>(currentList));
                 saveEspDevicesToPrefs();
-                // If the removed device was the active one, clear active or select another
                 if (Objects.equals(activeEspAddressLiveData.getValue(), deviceToRemove.getAddress())) {
                     setActiveEspAddress(currentList.isEmpty() ? null : currentList.get(0).getAddress());
                 }
@@ -112,7 +193,6 @@ public class AppViewModel extends AndroidViewModel {
     }
     
     public void setEspDevicesList(List<EspDevice> newDevicesList) {
-        // Ensure no duplicate addresses in the new list
         List<EspDevice> uniqueList = new ArrayList<>();
         List<String> addresses = new ArrayList<>();
         for (EspDevice device : newDevicesList) {
@@ -124,7 +204,6 @@ public class AppViewModel extends AndroidViewModel {
         espDevicesLiveData.setValue(uniqueList);
         saveEspDevicesToPrefs();
 
-        // Check if current active ESP is still in the new list
         String currentActive = activeEspAddressLiveData.getValue();
         if (currentActive != null) {
             boolean activeFound = false;
@@ -141,7 +220,6 @@ public class AppViewModel extends AndroidViewModel {
             setActiveEspAddress(uniqueList.get(0).getAddress());
         }
     }
-
 
     private void saveEspDevicesToPrefs() {
         List<EspDevice> currentList = espDevicesLiveData.getValue();
@@ -176,7 +254,6 @@ public class AppViewModel extends AndroidViewModel {
     }
 
     public void setActiveEspAddress(String address) {
-        // Normalize address: remove http/https schema for consistency if present
         String normalizedAddress = address;
         if (normalizedAddress != null) {
             normalizedAddress = normalizedAddress.replaceFirst("^(http://|https://)", "");
@@ -225,9 +302,11 @@ public class AppViewModel extends AndroidViewModel {
         lastSensorJsonDataLiveData.setValue(jsonData);
         saveLastSensorDataToPrefs(jsonData);
     }
+    
     private void saveLastSensorDataToPrefs(String jsonData) {
         sharedPreferences.edit().putString(PREF_LAST_SENSOR_JSON_DATA, jsonData).apply();
     }
+    
     private void loadLastSensorDataFromPrefs() {
         lastSensorJsonDataLiveData.setValue(sharedPreferences.getString(PREF_LAST_SENSOR_JSON_DATA, null));
     }
