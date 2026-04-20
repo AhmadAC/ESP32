@@ -167,8 +167,12 @@ public class DeviceManagementFragment extends Fragment {
         input.setHint("Enter a friendly name");
         FrameLayout container = new FrameLayout(requireContext());
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
-        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        
+        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
+        int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
+        params.leftMargin = marginPx;
+        params.rightMargin = marginPx;
+        
         input.setLayoutParams(params);
         container.addView(input);
 
@@ -194,8 +198,12 @@ public class DeviceManagementFragment extends Fragment {
         input.setHint("e.g., HP, ApeosPort");
         FrameLayout container = new FrameLayout(requireContext());
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
-        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        
+        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
+        int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
+        params.leftMargin = marginPx;
+        params.rightMargin = marginPx;
+        
         input.setLayoutParams(params);
         container.addView(input);
 
