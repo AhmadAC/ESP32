@@ -1,0 +1,126 @@
+C51 COMPILER V9.59.0.0   IIC                                                               02/22/2021 09:39:58 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE IIC
+OBJECT MODULE PLACED IN .\Objects\iic.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\Hardware\src\iic.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\App\inc;..\Hard
+                    -ware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\iic.lst) OBJECT(.\Objects\iic.obj)
+
+line level    source
+
+   1          #include "iic.h"
+   2          #include "delay.h"
+   3          
+   4          sbit IIC_SDA = P3^7;
+   5          sbit IIC_SCL = P3^6;
+   6          
+   7          //延迟
+   8          static void delay(void) {
+   9   1              _nop_();
+  10   1              _nop_();
+  11   1              _nop_();
+  12   1              _nop_();
+  13   1              _nop_();
+  14   1              _nop_();
+  15   1              _nop_();
+  16   1              _nop_();
+  17   1              _nop_();
+  18   1              _nop_();
+  19   1      }
+  20          
+  21          //IIC起始信号
+  22          void IIC_Start(void) {
+  23   1              IIC_SDA = 1;
+  24   1              IIC_SCL = 1;
+  25   1              delay();
+  26   1              IIC_SDA = 0;
+  27   1              delay();
+  28   1              IIC_SCL = 0;
+  29   1      }
+  30          
+  31          //IIC结束信号
+  32          void IIC_Stop(void) 
+  33          {
+  34   1              IIC_SDA = 0;
+  35   1              IIC_SCL = 1;
+  36   1              delay();
+  37   1              IIC_SDA = 1;
+  38   1              delay();
+  39   1      }
+  40          
+  41          //IIC等待应答
+  42          void IIC_Ack(void) 
+  43          {
+  44   1              uint8_t i = 0;
+  45   1          IIC_SCL = 1;
+  46   1              delay();
+  47   1          while ((IIC_SDA == 1) && (i++ < 250));
+  48   1          IIC_SCL = 0;
+  49   1          delay();
+  50   1      }
+  51          
+  52          //IIC发送应答信号
+  53          void IIC_SendAck(uint8_t ack) 
+  54          {
+C51 COMPILER V9.59.0.0   IIC                                                               02/22/2021 09:39:58 PAGE 2   
+
+  55   1              IIC_SDA = ack;
+  56   1              IIC_SCL = 1;
+  57   1              delay();
+  58   1              IIC_SCL = 0;
+  59   1              IIC_SDA = 1;
+  60   1      }
+  61          
+  62          //IIC发送一个字节
+  63          void IIC_WriteByte(uint8_t dat) 
+  64          {
+  65   1              uint8_t i;
+  66   1          for (i = 0; i < 8; i++) 
+  67   1              {
+  68   2              IIC_SCL = 0;
+  69   2                      delay(); 
+  70   2              if(dat & 0x80)
+  71   2                  IIC_SDA = 1;
+  72   2              else
+  73   2                  IIC_SDA = 0;    
+  74   2                      delay();
+  75   2              IIC_SCL = 1;
+  76   2                      delay();                
+  77   2              dat <<= 1;
+  78   2          }   
+  79   1              IIC_SCL= 0;
+  80   1              IIC_SDA = 1;
+  81   1              delay(); 
+  82   1      }
+  83          
+  84          //IIC读取一个字节
+  85          uint8_t IIC_ReadByte(void) 
+  86          {
+  87   1              uint8_t i, dat = 0;
+  88   1          for (i = 0; i < 8; i++) 
+  89   1              {
+  90   2              IIC_SCL = 0; 
+  91   2              delay();
+  92   2              IIC_SCL = 1;
+  93   2              delay();
+  94   2              dat <<= 1;
+  95   2              dat |= IIC_SDA;
+  96   2          }   
+  97   1              IIC_SCL= 0;
+  98   1              delay(); 
+  99   1              return dat;
+ 100   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    171    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,65 @@
+C51 COMPILER V9.59.0.0   PROTOCOL                                                          02/24/2021 20:17:06 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE PROTOCOL
+OBJECT MODULE PLACED IN .\Objects\protocol.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\App\src\protocol.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\App\inc;..\Hard
+                    -ware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\protocol.lst) OBJECT(.\Objects\protocol.obj)
+
+line level    source
+
+   1          #include "protocol.h"
+   2          
+   3          //求校验和
+   4          static uint8_t Get_Check(uint8_t *dat, uint16_t len) {
+   5   1              uint8_t sum = 0;
+   6   1              uint16_t i;
+   7   1              for (i = 0; i < len; i++) {
+   8   2                      sum += dat[i];
+   9   2              }
+  10   1              return sum;
+  11   1      }
+  12          
+  13          //红外内码学习指令组包
+  14          uint16_t IR_Learn_Pack(uint8_t *dat, uint8_t index) {
+  15   1              uint8_t *p = dat;
+  16   1              *p++ = FRAME_START;
+  17   1              *p++ = 0x08;
+  18   1              *p++ = 0x00;
+  19   1              *p++ = MODULE_ADDR;
+  20   1              *p++ = 0x10;
+  21   1              *p++ = index;
+  22   1              *p = Get_Check(&dat[3], p - dat - 3);
+  23   1              p++;
+  24   1              *p++ = FRAME_END;
+  25   1              return p - dat;
+  26   1      }
+  27          
+  28          //红外内码发送指令组包
+  29          uint16_t IR_Send_Pack(uint8_t *dat, uint8_t index) {
+  30   1              uint8_t *p = dat;
+  31   1              *p++ = FRAME_START;
+  32   1              *p++ = 0x08;
+  33   1              *p++ = 0x00;
+  34   1              *p++ = MODULE_ADDR;
+  35   1              *p++ = 0x12;
+  36   1              *p++ = index;
+  37   1              *p = Get_Check(&dat[3], p - dat - 3);
+  38   1              p++;
+  39   1              *p++ = FRAME_END;
+  40   1              return p - dat;
+  41   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    459    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      18
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

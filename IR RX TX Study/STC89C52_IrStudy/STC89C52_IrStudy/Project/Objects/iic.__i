@@ -1,0 +1,1 @@
+"..\Hardware\src\iic.c" OPTIMIZE (8,SPEED) BROWSE INCDIR(..\App\inc;..\Hardware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\iic.lst) OBJECT(.\Objects\iic.obj)

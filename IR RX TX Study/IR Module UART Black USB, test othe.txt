@@ -1,0 +1,5 @@
+IR Module UART Black USB, test other UART usb later.
+black gnd
+white txd
+green rxd
+red vcc

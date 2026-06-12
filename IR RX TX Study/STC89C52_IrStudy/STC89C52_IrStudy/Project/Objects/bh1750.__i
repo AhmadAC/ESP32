@@ -1,0 +1,1 @@
+"..\Hardware\src\bh1750.c" OPTIMIZE (8,SPEED) BROWSE INCDIR(..\App\inc;..\Hardware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\bh1750.lst) OBJECT(.\Objects\bh1750.obj)

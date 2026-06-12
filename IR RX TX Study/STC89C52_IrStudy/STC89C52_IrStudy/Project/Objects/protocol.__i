@@ -1,0 +1,1 @@
+"..\App\src\protocol.c" OPTIMIZE (8,SPEED) BROWSE INCDIR(..\App\inc;..\Hardware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\protocol.lst) OBJECT(.\Objects\protocol.obj)

@@ -1,0 +1,9 @@
+".\Objects\STARTUP.obj",
+".\Objects\main.obj",
+".\Objects\protocol.obj",
+".\Objects\led.obj",
+".\Objects\uart.obj",
+".\Objects\delay.obj",
+".\Objects\key.obj" 
+TO ".\Objects\template" 
+PRINT(".\Listings\template.m51") RAMSIZE(256) 

@@ -1,0 +1,97 @@
+C51 COMPILER V9.59.0.0   SHT3X                                                             02/03/2021 00:59:45 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE SHT3X
+OBJECT MODULE PLACED IN .\Objects\sht3x.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\Hardware\src\sht3x.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\App\inc;..\Ha
+                    -rdware\inc) DEBUG OBJECTEXTEND PRINT(.\Listings\sht3x.lst) OBJECT(.\Objects\sht3x.obj)
+
+line level    source
+
+   1          #include "sht3x.h"
+   2          #include "iic.h"
+   3          #include "delay.h"
+   4          #define CRC_MASK                0x31
+   5          #define SHT3X_ADDRESS   0x44
+   6          
+   7          //COMMAND 0x2306 {0x68, 0x24, 0xa1, 0x41, 0xe2, 0x5f}
+   8          
+   9          //CRC8校验
+  10          static uint8_t Get_Crc(uint8_t *dat, uint16_t len) {
+  11   1          uint16_t i = 0, j;
+  12   1          uint8_t crc = 0xff;
+  13   1              for (i = 0; i < len; i++) {
+  14   2                      crc ^= dat[i];
+  15   2                      for (j = 0; j < 8; j++) {
+  16   3                              if (crc & 0x80) {
+  17   4                                      crc = (crc << 1) ^ CRC_MASK;
+  18   4                  }
+  19   3                  else {
+  20   4                      crc = (crc << 1);
+  21   4                  }
+  22   3                      }
+  23   2              }
+  24   1          return crc;
+  25   1      }
+  26          
+  27          //温度转换
+  28          static float Get_Temp(uint16_t temp) {
+  29   1              return 175.0f * (float)temp / 65535.0f - 45.0f;
+  30   1      }
+  31          
+  32          //湿度转换
+  33          static float Get_Hum(uint16_t hum) {
+  34   1              return (100.0f * (float)hum / 65535.0f);
+  35   1      }
+  36          
+  37          //读取温湿度
+  38          uint8_t SHT3X_Read(float *temp, float *hum) {
+  39   1              uint8_t i, check, dat[6];
+  40   1              uint16_t h, t;
+  41   1              IIC_Start();
+  42   1              IIC_WriteByte((SHT3X_ADDRESS << 1));
+  43   1              IIC_Ack();
+  44   1              IIC_WriteByte(0x2c);
+  45   1              IIC_Ack();
+  46   1              IIC_WriteByte(0x06);
+  47   1              IIC_Ack();
+  48   1              IIC_Stop();
+  49   1              delay_ms(50);
+  50   1              IIC_Start();
+  51   1              IIC_WriteByte((SHT3X_ADDRESS << 1) + 1);
+  52   1              IIC_Ack();
+  53   1              for (i = 0; i < 6; i++) {               //读取6个字节数据，最后一个送ack为1
+  54   2                      dat[i] = IIC_ReadByte();
+C51 COMPILER V9.59.0.0   SHT3X                                                             02/03/2021 00:59:45 PAGE 2   
+
+  55   2                      IIC_SendAck((i != 5) ? 0 : 1);
+  56   2              }
+  57   1              IIC_Stop();
+  58   1              check = Get_Crc(&dat[0], 2);            
+  59   1              if (check != dat[2]) {                  //判断温度的校验码数据是否正确
+  60   2                      return 1;
+  61   2              }
+  62   1              check = Get_Crc(&dat[3], 2);
+  63   1              if (check != dat[5]) {                  //判断湿度的校验码数据是否正确
+  64   2                      return 1;
+  65   2              }
+  66   1              t = (uint16_t)(dat[0] << 8) + (uint16_t)dat[1];
+  67   1              h = (uint16_t)(dat[3] << 8) + (uint16_t)dat[4];
+  68   1              *temp = Get_Temp(t);
+  69   1              *hum = Get_Hum(h);
+  70   1              return 0;
+  71   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    354    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      21
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
