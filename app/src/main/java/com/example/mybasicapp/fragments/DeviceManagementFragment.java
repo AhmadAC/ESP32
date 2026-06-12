@@ -166,9 +166,13 @@ public class DeviceManagementFragment extends Fragment {
         input.setText(device.getName());
         input.setHint("Enter a friendly name");
         FrameLayout container = new FrameLayout(requireContext());
-        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
-        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        
+        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
+        int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
+        params.leftMargin = marginPx;
+        params.rightMargin = marginPx;
+        
         input.setLayoutParams(params);
         container.addView(input);
 
@@ -193,9 +197,13 @@ public class DeviceManagementFragment extends Fragment {
         input.setText(suggestedKeyword);
         input.setHint("e.g., HP, ApeosPort");
         FrameLayout container = new FrameLayout(requireContext());
-        FrameLayout.LayoutParams params = new  FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
-        params.rightMargin = getResources().getDimensionPixelSize(R.dimen.dialog_margin);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        
+        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
+        int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
+        params.leftMargin = marginPx;
+        params.rightMargin = marginPx;
+        
         input.setLayoutParams(params);
         container.addView(input);
 
@@ -463,4 +471,9 @@ public class DeviceManagementFragment extends Fragment {
         }
         
         // Clear the resolve queue
-        syn
+        synchronized (resolveQueue) {
+            resolveQueue.clear();
+            isResolving = false;
+        }
+    }
+}
