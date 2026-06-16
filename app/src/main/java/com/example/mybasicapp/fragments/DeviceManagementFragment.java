@@ -102,10 +102,16 @@ public class DeviceManagementFragment extends Fragment {
         buttonAddManualIp.setOnClickListener(v -> {
             String ip = editTextManualIp.getText().toString().trim();
             if (!ip.isEmpty()) {
-                String cleanIp = ip.replaceFirst("^(http://|https://)", "");
+                // Strip protocols, endpoints, and spaces to get the raw IP
+                String cleanIp = ip.replaceFirst("^(http://|https://)", "").replaceAll("/.*$", "").trim();
                 String customName = appViewModel.getCustomName(cleanIp);
                 String displayName = (customName != null && !customName.isEmpty()) ? customName : "Manual ESP (" + cleanIp + ")";
                 
+                // SAVE IT TO PERMANENT STORAGE FIRST
+                com.example.mybasicapp.model.EspDevice newModelDevice = new com.example.mybasicapp.model.EspDevice(displayName, cleanIp);
+                appViewModel.addEspDevice(newModelDevice);
+
+                // Add to list UI
                 EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(displayName, "Manual Device", cleanIp, 80);
                 
                 mainThreadHandler.post(() -> {
@@ -120,11 +126,11 @@ public class DeviceManagementFragment extends Fragment {
                     if (!exists) {
                         deviceList.add(newDevice);
                         updateUI();
-                        Toast.makeText(getContext(), "Manual IP added to list", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Manual IP permanently saved and added", Toast.LENGTH_SHORT).show();
                     } else {
-                        Toast.makeText(getContext(), "IP already in list", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "IP is already in the list", Toast.LENGTH_SHORT).show();
                     }
-                    editTextManualIp.setText("");
+                    editTextManualIp.setText(""); // Clear input box
                 });
             }
         });
@@ -173,7 +179,7 @@ public class DeviceManagementFragment extends Fragment {
     private void showDeviceOptionsDialog(EspDeviceAdapter.EspDevice device) {
         final CharSequence[] items = {
                 "Rename Device",
-                "Hide This IP (" + device.getIpAddress() + ")",
+                "Remove / Delete Saved Device",
                 "Hide by Keyword..."
         };
 
@@ -182,9 +188,10 @@ public class DeviceManagementFragment extends Fragment {
                 .setItems(items, (dialog, item) -> {
                     if (item == 0) { // Rename
                         showRenameDialog(device);
-                    } else if (item == 1) { // Hide IP
-                        appViewModel.addBannedIp(device.getIpAddress());
-                        Toast.makeText(getContext(), "IP " + device.getIpAddress() + " will be hidden on next scan.", Toast.LENGTH_SHORT).show();
+                    } else if (item == 1) { // Remove / Delete device
+                        appViewModel.removeEspDevice(new com.example.mybasicapp.model.EspDevice(device.getName(), device.getIpAddress()));
+                        appViewModel.addBannedIp(device.getIpAddress()); // Ban it so discovery doesn't immediately bring it back if it's online
+                        Toast.makeText(getContext(), "Device removed.", Toast.LENGTH_SHORT).show();
                         restartDiscovery();
                     } else if (item == 2) { // Hide Keyword
                         showKeywordDialog(device);
@@ -285,6 +292,22 @@ public class DeviceManagementFragment extends Fragment {
         mainThreadHandler.post(() -> swipeRefresh.setRefreshing(true));
         stopDiscovery();
         deviceList.clear();
+
+        // Load previously saved/manual devices so they persist across refreshes
+        List<com.example.mybasicapp.model.EspDevice> savedDevices = appViewModel.getEspDevicesLiveData().getValue();
+        if (savedDevices != null) {
+            for (com.example.mybasicapp.model.EspDevice saved : savedDevices) {
+                // Apply custom name if exists
+                String customName = appViewModel.getCustomName(saved.getAddress());
+                String displayName = (customName != null && !customName.isEmpty()) ? customName : saved.getName();
+                
+                // Don't add if it's banned
+                if (!appViewModel.isIpBanned(saved.getAddress())) {
+                    deviceList.add(new EspDeviceAdapter.EspDevice(displayName, "Saved Device", saved.getAddress(), 80));
+                }
+            }
+        }
+
         updateUI();
         startDiscovery();
 
