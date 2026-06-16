@@ -95,6 +95,39 @@ public class DeviceManagementFragment extends Fragment {
         recyclerView = view.findViewById(R.id.recyclerViewDevices);
         textViewEmptyState = view.findViewById(R.id.textViewEmptyState);
         buttonClearFilters = view.findViewById(R.id.buttonClearFilters);
+        
+        EditText editTextManualIp = view.findViewById(R.id.editTextManualIp);
+        Button buttonAddManualIp = view.findViewById(R.id.buttonAddManualIp);
+
+        buttonAddManualIp.setOnClickListener(v -> {
+            String ip = editTextManualIp.getText().toString().trim();
+            if (!ip.isEmpty()) {
+                String cleanIp = ip.replaceFirst("^(http://|https://)", "");
+                String customName = appViewModel.getCustomName(cleanIp);
+                String displayName = (customName != null && !customName.isEmpty()) ? customName : "Manual ESP (" + cleanIp + ")";
+                
+                EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(displayName, "Manual Device", cleanIp, 80);
+                
+                mainThreadHandler.post(() -> {
+                    boolean exists = false;
+                    for (EspDeviceAdapter.EspDevice existingDevice : deviceList) {
+                        if (existingDevice.getIpAddress().equals(cleanIp)) {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists) {
+                        deviceList.add(newDevice);
+                        updateUI();
+                        Toast.makeText(getContext(), "Manual IP added to list", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getContext(), "IP already in list", Toast.LENGTH_SHORT).show();
+                    }
+                    editTextManualIp.setText("");
+                });
+            }
+        });
 
         buttonClearFilters.setOnClickListener(v -> {
             new AlertDialog.Builder(requireContext())
