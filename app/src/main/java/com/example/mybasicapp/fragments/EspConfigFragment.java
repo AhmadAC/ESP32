@@ -1,3 +1,4 @@
+// app\src\main\java\com\example\mybasicapp\fragments\EspConfigFragment.java
 package com.example.mybasicapp.fragments;
 
 import android.os.Bundle;
@@ -38,13 +39,10 @@ public class EspConfigFragment extends Fragment {
     private TextView textViewEspConfigStatus;
 
     private String currentActiveEspIpForFragment = null;
-    private boolean isOperating = false; // To prevent multiple simultaneous operations
-
-    // To store fetched config to avoid re-parsing unless fetched again
+    private boolean isOperating = false; 
     private JSONObject currentEspConfig = null;
 
     public EspConfigFragment() {
-        // Required empty public constructor
     }
 
     @Override
@@ -73,6 +71,7 @@ public class EspConfigFragment extends Fragment {
         textViewEspConfigStatus = view.findViewById(R.id.textViewEspConfigStatus);
 
         buttonFetchEspConfig.setOnClickListener(v -> {
+            if (!isAdded() || getContext() == null) return;
             if (currentActiveEspIpForFragment != null && !currentActiveEspIpForFragment.isEmpty()) {
                 fetchFullEspConfig(currentActiveEspIpForFragment);
             } else {
@@ -90,10 +89,11 @@ public class EspConfigFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         appViewModel.getActiveEspAddressLiveData().observe(getViewLifecycleOwner(), address -> {
+            if (!isAdded() || getContext() == null) return;
             currentActiveEspIpForFragment = address;
             updateUiBasedOnActiveEsp();
             if (address != null && !address.isEmpty()) {
-                fetchFullEspConfig(address); // Auto-fetch on active ESP change or view creation
+                fetchFullEspConfig(address); 
             } else {
                 clearConfigFields();
                 textViewEspConfigStatus.setText(R.string.select_active_esp_prompt);
@@ -118,7 +118,7 @@ public class EspConfigFragment extends Fragment {
         if (!isActiveEspSelected) {
             clearConfigFields();
             textViewEspConfigStatus.setText(R.string.select_active_esp_prompt);
-            currentEspConfig = null; // Clear cached config
+            currentEspConfig = null; 
         }
     }
 
@@ -129,48 +129,40 @@ public class EspConfigFragment extends Fragment {
     }
 
     private void populateFieldsFromConfig(JSONObject config) {
-        if (config == null || getContext() == null) {
+        if (!isAdded() || config == null || getContext() == null) {
             clearConfigFields();
             return;
         }
-        currentEspConfig = config; // Cache the fetched config
+        currentEspConfig = config; 
 
         editTextCalibrationOffset.setText(String.format(Locale.US, "%.1f", config.optDouble("calibration_offset", 0.0)));
         editTextWifiSsid.setText(config.optString("wifi_ssid", ""));
-        // For security, don't pre-fill password from config unless explicitly desired for "show current"
-        // editTextWifiPassword.setText(config.optString("wifi_password", ""));
-        // Better to leave password blank for user to input if changing.
-        editTextWifiPassword.setText(""); // Keep password field blank for new input
-        // If you *want* to show the password (not recommended for actual passwords):
-        // String storedPassword = config.optString("wifi_password", "");
-        // editTextWifiPassword.setText(storedPassword.equals(DEFAULT_WIFI_PASSWORD_PLACEHOLDER) ? "" : storedPassword);
-        // Where DEFAULT_WIFI_PASSWORD_PLACEHOLDER might be "YOUR_PASSWORD_HERE" if your ESP uses that.
+        editTextWifiPassword.setText(""); 
 
         textViewEspConfigStatus.setText(getString(R.string.status_config_loaded_at, System.currentTimeMillis()));
     }
 
     private void fetchFullEspConfig(String espIp) {
         if (espIp == null || espIp.isEmpty() || isOperating) {
-            if(isOperating) Log.d(TAG, "Operation in progress, skipping fetch request.");
             return;
         }
         isOperating = true;
         textViewEspConfigStatus.setText(R.string.status_fetching_config);
-        clearConfigFields(); // Clear fields while fetching
+        clearConfigFields(); 
 
-        String baseUrl = "http://" + espIp; // EspConfigClient needs full URL
+        String baseUrl = "http://" + espIp; 
         espConfigClient.getConfig(baseUrl, new EspConfigClient.ConfigCallback() {
             @Override
             public void onSuccess(String responseBody) {
-                if (getActivity() == null) { isOperating = false; return; }
+                if (!isAdded() || getActivity() == null) { isOperating = false; return; }
                 getActivity().runOnUiThread(() -> {
+                    if (!isAdded()) return;
                     isOperating = false;
                     try {
                         JSONObject config = new JSONObject(responseBody);
                         populateFieldsFromConfig(config);
                         textViewEspConfigStatus.setText(R.string.status_config_fetched_ok);
                     } catch (JSONException e) {
-                        Log.e(TAG, "Error parsing full ESP config JSON: " + responseBody, e);
                         textViewEspConfigStatus.setText(R.string.status_config_parse_error);
                         currentEspConfig = null;
                     }
@@ -188,6 +180,7 @@ public class EspConfigFragment extends Fragment {
     }
 
     private void setEspCalibrationOffset() {
+        if (!isAdded() || getContext() == null) return;
         if (currentActiveEspIpForFragment == null || currentActiveEspIpForFragment.isEmpty() || isOperating) {
             if (isOperating) Toast.makeText(getContext(), R.string.operation_in_progress, Toast.LENGTH_SHORT).show();
             else Toast.makeText(getContext(), R.string.no_active_esp_for_action, Toast.LENGTH_SHORT).show();
@@ -206,7 +199,7 @@ public class EspConfigFragment extends Fragment {
             espConfigClient.setCalibration(baseUrl, offsetValue, new EspConfigClient.ConfigCallback() {
                 @Override public void onSuccess(String responseBody) {
                     handleOperationError(getString(R.string.status_calibration_set_success));
-                    fetchFullEspConfig(currentActiveEspIpForFragment); // Re-fetch to confirm
+                    fetchFullEspConfig(currentActiveEspIpForFragment); 
                 }
                 @Override public void onFailure(IOException e) { handleOperationError(getString(R.string.status_set_failed_network, e.getMessage()));}
                 @Override public void onError(String message, int code) { handleOperationError(getString(R.string.status_set_failed_server, code, message));}
@@ -218,17 +211,16 @@ public class EspConfigFragment extends Fragment {
     }
 
     private void setEspWifiConfig() {
+        if (!isAdded() || getContext() == null) return;
         if (currentActiveEspIpForFragment == null || currentActiveEspIpForFragment.isEmpty() || isOperating) {
              if (isOperating) Toast.makeText(getContext(), R.string.operation_in_progress, Toast.LENGTH_SHORT).show();
             else Toast.makeText(getContext(), R.string.no_active_esp_for_action, Toast.LENGTH_SHORT).show();
             return;
         }
         String ssid = editTextWifiSsid.getText() != null ? editTextWifiSsid.getText().toString().trim() : "";
-        String password = editTextWifiPassword.getText() != null ? editTextWifiPassword.getText().toString() : ""; // Password can be empty
+        String password = editTextWifiPassword.getText() != null ? editTextWifiPassword.getText().toString() : ""; 
 
         if (TextUtils.isEmpty(ssid)) {
-            // Some ESPs might treat empty SSID as "disconnect" or "use saved default".
-            // For explicit setting, usually requires a non-empty SSID.
             Toast.makeText(getContext(), R.string.enter_wifi_ssid_prompt, Toast.LENGTH_SHORT).show();
             return;
         }
@@ -238,24 +230,19 @@ public class EspConfigFragment extends Fragment {
         espConfigClient.setWifiConfig(baseUrl, ssid, password, new EspConfigClient.ConfigCallback() {
             @Override public void onSuccess(String responseBody) {
                 handleOperationError(getString(R.string.status_wifi_set_success));
-                Toast.makeText(getContext(), R.string.esp_reboot_may_be_needed_wifi, Toast.LENGTH_LONG).show();
-                // Don't auto-fetch immediately as ESP might be rebooting or changing IP
-                // User should re-scan or re-select if ESP address changes.
-                // Or, if IP is static, can try fetching after a delay.
-                // For now, just inform user.
+                if (isAdded() && getContext() != null) Toast.makeText(getContext(), R.string.esp_reboot_may_be_needed_wifi, Toast.LENGTH_LONG).show();
             }
             @Override public void onFailure(IOException e) { handleOperationError(getString(R.string.status_set_failed_network, e.getMessage()));}
             @Override public void onError(String message, int code) { handleOperationError(getString(R.string.status_set_failed_server, code, message));}
         });
     }
 
-
     private void handleOperationError(String message) {
-        if (getActivity() == null) { isOperating = false; return;}
+        if (!isAdded() || getActivity() == null) { isOperating = false; return;}
         getActivity().runOnUiThread(() -> {
+            if (!isAdded() || getContext() == null) return;
             isOperating = false;
             textViewEspConfigStatus.setText(message.substring(0, Math.min(message.length(),150)));
-            Log.d(TAG, "ESP Config operation status: " + message);
             Toast.makeText(getContext(), message.substring(0, Math.min(message.length(),100)), Toast.LENGTH_LONG).show();
         });
     }
@@ -263,7 +250,6 @@ public class EspConfigFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        // Refresh data if an ESP is active when fragment becomes visible
         if (currentActiveEspIpForFragment != null && !currentActiveEspIpForFragment.isEmpty()) {
             fetchFullEspConfig(currentActiveEspIpForFragment);
         }

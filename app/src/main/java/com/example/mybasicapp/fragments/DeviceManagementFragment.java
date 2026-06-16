@@ -1,3 +1,4 @@
+// app\src\main\java\com\example\mybasicapp\fragments\DeviceManagementFragment.java
 package com.example.mybasicapp.fragments;
 
 import android.content.Context;
@@ -60,17 +61,14 @@ public class DeviceManagementFragment extends Fragment {
     private Handler mainThreadHandler;
     private AppViewModel appViewModel;
 
-    // Queue for Android 13 and below to prevent "Already resolving" crashes
     private final Queue<NsdServiceInfo> resolveQueue = new LinkedList<>();
     private boolean isResolving = false;
 
-    // List to hold API 34+ callbacks for proper cleanup
     private final List<NsdManager.ServiceInfoCallback> activeCallbacks = Collections.synchronizedList(new ArrayList<>());
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Initialize ViewModel
         appViewModel = new ViewModelProvider(requireActivity()).get(AppViewModel.class);
     }
 
@@ -83,7 +81,6 @@ public class DeviceManagementFragment extends Fragment {
         nsdManager = (NsdManager) requireContext().getSystemService(Context.NSD_SERVICE);
         executorService = Executors.newSingleThreadExecutor();
 
-        // On Samsung & other devices, a multicast lock is required for mDNS to work reliably
         WifiManager wifi = (WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wifi != null) {
             multicastLock = wifi.createMulticastLock("esp32_multicast_lock");
@@ -102,19 +99,17 @@ public class DeviceManagementFragment extends Fragment {
         buttonAddManualIp.setOnClickListener(v -> {
             String ip = editTextManualIp.getText().toString().trim();
             if (!ip.isEmpty()) {
-                // Strip protocols, endpoints, and spaces to get the raw IP
                 String cleanIp = ip.replaceFirst("^(http://|https://)", "").replaceAll("/.*$", "").trim();
                 String customName = appViewModel.getCustomName(cleanIp);
                 String displayName = (customName != null && !customName.isEmpty()) ? customName : "Manual ESP (" + cleanIp + ")";
                 
-                // SAVE IT TO PERMANENT STORAGE FIRST
                 com.example.mybasicapp.model.EspDevice newModelDevice = new com.example.mybasicapp.model.EspDevice(displayName, cleanIp);
                 appViewModel.addEspDevice(newModelDevice);
 
-                // Add to list UI
                 EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(displayName, "Manual Device", cleanIp, 80);
                 
                 mainThreadHandler.post(() -> {
+                    if (!isAdded() || getContext() == null) return; // Null safety checking
                     boolean exists = false;
                     for (EspDeviceAdapter.EspDevice existingDevice : deviceList) {
                         if (existingDevice.getIpAddress().equals(cleanIp)) {
@@ -130,18 +125,19 @@ public class DeviceManagementFragment extends Fragment {
                     } else {
                         Toast.makeText(getContext(), "IP is already in the list", Toast.LENGTH_SHORT).show();
                     }
-                    editTextManualIp.setText(""); // Clear input box
+                    editTextManualIp.setText(""); 
                 });
             }
         });
 
         buttonClearFilters.setOnClickListener(v -> {
+            if (!isAdded() || getContext() == null) return;
             new AlertDialog.Builder(requireContext())
                     .setTitle("Clear All Filters?")
                     .setMessage("This will unhide all devices and keywords. Are you sure?")
                     .setPositiveButton("Yes, Clear", (dialog, which) -> {
                         appViewModel.clearAllFilters();
-                        Toast.makeText(getContext(), "Filters cleared. Re-scanning...", Toast.LENGTH_SHORT).show();
+                        if (isAdded() && getContext() != null) Toast.makeText(getContext(), "Filters cleared. Re-scanning...", Toast.LENGTH_SHORT).show();
                         restartDiscovery();
                     })
                     .setNegativeButton("Cancel", null)
@@ -157,8 +153,8 @@ public class DeviceManagementFragment extends Fragment {
     private void setupRecyclerView() {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         adapter = new EspDeviceAdapter(deviceList,
-                // OnClickListener
                 device -> {
+                    if (!isAdded() || getContext() == null) return;
                     String address = device.getIpAddress();
                     appViewModel.setActiveEspAddress(address);
                     Toast.makeText(getContext(), "\"" + device.getName() + "\" set as active device.", Toast.LENGTH_SHORT).show();
@@ -170,13 +166,13 @@ public class DeviceManagementFragment extends Fragment {
                     intent.putExtra("NAME", device.getName());
                     startActivity(intent);
                 },
-                // OnDeviceLongClickListener
                 this::showDeviceOptionsDialog
         );
         recyclerView.setAdapter(adapter);
     }
 
     private void showDeviceOptionsDialog(EspDeviceAdapter.EspDevice device) {
+        if (!isAdded() || getContext() == null) return;
         final CharSequence[] items = {
                 "Rename Device",
                 "Remove / Delete Saved Device",
@@ -186,14 +182,15 @@ public class DeviceManagementFragment extends Fragment {
         new AlertDialog.Builder(requireContext())
                 .setTitle("Options for \"" + device.getName() + "\"")
                 .setItems(items, (dialog, item) -> {
-                    if (item == 0) { // Rename
+                    if (!isAdded() || getContext() == null) return;
+                    if (item == 0) { 
                         showRenameDialog(device);
-                    } else if (item == 1) { // Remove / Delete device
+                    } else if (item == 1) { 
                         appViewModel.removeEspDevice(new com.example.mybasicapp.model.EspDevice(device.getName(), device.getIpAddress()));
-                        appViewModel.addBannedIp(device.getIpAddress()); // Ban it so discovery doesn't immediately bring it back if it's online
+                        appViewModel.addBannedIp(device.getIpAddress()); 
                         Toast.makeText(getContext(), "Device removed.", Toast.LENGTH_SHORT).show();
                         restartDiscovery();
-                    } else if (item == 2) { // Hide Keyword
+                    } else if (item == 2) { 
                         showKeywordDialog(device);
                     }
                 })
@@ -201,6 +198,7 @@ public class DeviceManagementFragment extends Fragment {
     }
 
     private void showRenameDialog(EspDeviceAdapter.EspDevice device) {
+        if (!isAdded() || getContext() == null) return;
         final EditText input = new EditText(requireContext());
         input.setInputType(InputType.TYPE_CLASS_TEXT);
         input.setText(device.getName());
@@ -208,7 +206,6 @@ public class DeviceManagementFragment extends Fragment {
         FrameLayout container = new FrameLayout(requireContext());
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         
-        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
         int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
         params.leftMargin = marginPx;
         params.rightMargin = marginPx;
@@ -220,6 +217,7 @@ public class DeviceManagementFragment extends Fragment {
                 .setTitle("Rename Device")
                 .setView(container)
                 .setPositiveButton("Save", (dialog, which) -> {
+                    if (!isAdded() || getContext() == null) return;
                     String newName = input.getText().toString().trim();
                     appViewModel.setCustomName(device.getIpAddress(), newName);
                     Toast.makeText(getContext(), "Device renamed. Re-scanning...", Toast.LENGTH_SHORT).show();
@@ -230,6 +228,7 @@ public class DeviceManagementFragment extends Fragment {
     }
 
     private void showKeywordDialog(EspDeviceAdapter.EspDevice device) {
+        if (!isAdded() || getContext() == null) return;
         final EditText input = new EditText(requireContext());
         input.setInputType(InputType.TYPE_CLASS_TEXT);
         String originalName = device.getOriginalName();
@@ -239,7 +238,6 @@ public class DeviceManagementFragment extends Fragment {
         FrameLayout container = new FrameLayout(requireContext());
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         
-        // Use standard 16dp margin instead of looking for R.dimen.dialog_margin
         int marginPx = (int) (16 * getResources().getDisplayMetrics().density);
         params.leftMargin = marginPx;
         params.rightMargin = marginPx;
@@ -251,6 +249,7 @@ public class DeviceManagementFragment extends Fragment {
                 .setTitle("Hide by Keyword")
                 .setView(container)
                 .setPositiveButton("Hide", (dialog, which) -> {
+                    if (!isAdded() || getContext() == null) return;
                     String keyword = input.getText().toString().trim();
                     if (!keyword.isEmpty()) {
                         appViewModel.addBannedKeyword(keyword);
@@ -289,19 +288,19 @@ public class DeviceManagementFragment extends Fragment {
     }
 
     private void restartDiscovery() {
-        mainThreadHandler.post(() -> swipeRefresh.setRefreshing(true));
+        if (!isAdded()) return;
+        mainThreadHandler.post(() -> {
+            if (isAdded() && swipeRefresh != null) swipeRefresh.setRefreshing(true);
+        });
         stopDiscovery();
         deviceList.clear();
 
-        // Load previously saved/manual devices so they persist across refreshes
         List<com.example.mybasicapp.model.EspDevice> savedDevices = appViewModel.getEspDevicesLiveData().getValue();
         if (savedDevices != null) {
             for (com.example.mybasicapp.model.EspDevice saved : savedDevices) {
-                // Apply custom name if exists
                 String customName = appViewModel.getCustomName(saved.getAddress());
                 String displayName = (customName != null && !customName.isEmpty()) ? customName : saved.getName();
                 
-                // Don't add if it's banned
                 if (!appViewModel.isIpBanned(saved.getAddress())) {
                     deviceList.add(new EspDeviceAdapter.EspDevice(displayName, "Saved Device", saved.getAddress(), 80));
                 }
@@ -312,10 +311,10 @@ public class DeviceManagementFragment extends Fragment {
         startDiscovery();
 
         mainThreadHandler.postDelayed(() -> {
-            if (swipeRefresh.isRefreshing()) {
+            if (isAdded() && swipeRefresh != null && swipeRefresh.isRefreshing()) {
                 swipeRefresh.setRefreshing(false);
             }
-        }, 8000); // 8-second discovery window
+        }, 8000); 
     }
 
     private void startDiscovery() {
@@ -324,31 +323,23 @@ public class DeviceManagementFragment extends Fragment {
         }
         discoveryListener = new NsdManager.DiscoveryListener() {
             @Override
-            public void onDiscoveryStarted(String regType) {
-                Log.d(TAG, "mDNS Service Discovery Started");
-            }
+            public void onDiscoveryStarted(String regType) {}
 
             @Override
             public void onServiceFound(NsdServiceInfo service) {
-                Log.d(TAG, "Service Found: " + service.getServiceName());
                 if (service.getServiceType().contains("_http._tcp")) {
                     handleServiceResolution(service);
                 }
             }
 
             @Override
-            public void onServiceLost(NsdServiceInfo service) {
-                Log.w(TAG, "Service Lost: " + service.getServiceName());
-            }
+            public void onServiceLost(NsdServiceInfo service) {}
 
             @Override
-            public void onDiscoveryStopped(String serviceType) {
-                Log.i(TAG, "mDNS Service Discovery Stopped");
-            }
+            public void onDiscoveryStopped(String serviceType) {}
 
             @Override
             public void onStartDiscoveryFailed(String serviceType, int errorCode) {
-                Log.e(TAG, "Discovery start failed: Error code:" + errorCode);
                 if (nsdManager != null) {
                     try {
                         nsdManager.stopServiceDiscovery(this);
@@ -357,37 +348,32 @@ public class DeviceManagementFragment extends Fragment {
             }
 
             @Override
-            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
-                Log.e(TAG, "Discovery stop failed: Error code:" + errorCode);
-            }
+            public void onStopDiscoveryFailed(String serviceType, int errorCode) {}
         };
 
-        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener);
+        try {
+            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start discovery", e);
+        }
     }
 
     private void handleServiceResolution(NsdServiceInfo service) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             NsdManager.ServiceInfoCallback callback = new NsdManager.ServiceInfoCallback() {
                 @Override
-                public void onServiceInfoCallbackRegistrationFailed(int errorCode) {
-                    Log.e(TAG, "API 34+ Callback Registration Failed: " + errorCode);
-                }
+                public void onServiceInfoCallbackRegistrationFailed(int errorCode) {}
 
                 @Override
                 public void onServiceUpdated(@NonNull NsdServiceInfo serviceInfo) {
-                    Log.d(TAG, "API 34+ Service Resolved: " + serviceInfo.getServiceName());
                     addDeviceToList(serviceInfo);
                 }
 
                 @Override
-                public void onServiceLost() {
-                    Log.d(TAG, "API 34+ Service Lost via callback");
-                }
+                public void onServiceLost() {}
 
                 @Override
-                public void onServiceInfoCallbackUnregistered() {
-                    Log.d(TAG, "API 34+ Callback Unregistered");
-                }
+                public void onServiceInfoCallbackUnregistered() {}
             };
             activeCallbacks.add(callback);
             nsdManager.registerServiceInfoCallback(service, executorService, callback);
@@ -405,9 +391,7 @@ public class DeviceManagementFragment extends Fragment {
 
     private void resolveNextInQueue() {
         synchronized (resolveQueue) {
-            if (resolveQueue.isEmpty() || isResolving) {
-                return;
-            }
+            if (resolveQueue.isEmpty() || isResolving) return;
             isResolving = true;
             NsdServiceInfo serviceToResolve = resolveQueue.poll();
             if (serviceToResolve == null) {
@@ -415,20 +399,23 @@ public class DeviceManagementFragment extends Fragment {
                 return;
             }
 
-            nsdManager.resolveService(serviceToResolve, new NsdManager.ResolveListener() {
-                @Override
-                public void onServiceResolved(NsdServiceInfo serviceInfo) {
-                    Log.d(TAG, "Legacy Service Resolved: " + serviceInfo.getServiceName());
-                    addDeviceToList(serviceInfo);
-                    finishResolving();
-                }
+            try {
+                nsdManager.resolveService(serviceToResolve, new NsdManager.ResolveListener() {
+                    @Override
+                    public void onServiceResolved(NsdServiceInfo serviceInfo) {
+                        addDeviceToList(serviceInfo);
+                        finishResolving();
+                    }
 
-                @Override
-                public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                    Log.e(TAG, "Legacy Resolve Failed for " + serviceInfo.getServiceName() + " with error: " + errorCode);
-                    finishResolving();
-                }
-            });
+                    @Override
+                    public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
+                        finishResolving();
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Exception during resolve", e);
+                finishResolving();
+            }
         }
     }
 
@@ -444,21 +431,18 @@ public class DeviceManagementFragment extends Fragment {
             String originalName = serviceInfo.getServiceName();
             String ip = serviceInfo.getHost().getHostAddress();
 
-            // APPLY FILTERS
             if (appViewModel.isIpBanned(ip) || appViewModel.matchesBannedKeyword(originalName)) {
-                Log.d(TAG, "Device filtered out: " + originalName + " (" + ip + ")");
                 return;
             }
 
             int port = serviceInfo.getPort();
-
-            // APPLY CUSTOM NAME
             String customName = appViewModel.getCustomName(ip);
             String displayName = (customName != null && !customName.isEmpty()) ? customName : originalName;
 
             EspDeviceAdapter.EspDevice newDevice = new EspDeviceAdapter.EspDevice(displayName, originalName, ip, port);
 
             mainThreadHandler.post(() -> {
+                if (!isAdded()) return; // UI Safety check
                 boolean deviceExists = false;
                 for (EspDeviceAdapter.EspDevice existingDevice : deviceList) {
                     if (existingDevice.getIpAddress().equals(ip)) {
@@ -469,7 +453,6 @@ public class DeviceManagementFragment extends Fragment {
 
                 if (!deviceExists) {
                     deviceList.add(newDevice);
-                    // Sort list alphabetically by display name
                     Collections.sort(deviceList, Comparator.comparing(EspDeviceAdapter.EspDevice::getName, String.CASE_INSENSITIVE_ORDER));
                     updateUI();
                 }
@@ -492,7 +475,6 @@ public class DeviceManagementFragment extends Fragment {
                 swipeRefresh.setRefreshing(false);
             }
 
-            // Show/hide clear filters button
             if (buttonClearFilters != null) {
                  buttonClearFilters.setVisibility(appViewModel.hasFilters() ? View.VISIBLE : View.GONE);
             }
@@ -526,7 +508,6 @@ public class DeviceManagementFragment extends Fragment {
             }
         }
         
-        // Clear the resolve queue
         synchronized (resolveQueue) {
             resolveQueue.clear();
             isResolving = false;
