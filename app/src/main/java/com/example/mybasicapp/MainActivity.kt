@@ -10,6 +10,9 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -22,6 +25,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -33,11 +37,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -45,9 +51,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 
 // Exact colors matching your ESP32 web server CSS
@@ -66,6 +74,7 @@ val BtnGray = Color(0xFF475569)
 class MainActivity : ComponentActivity() {
 
     private var hasNotificationPermission by mutableStateOf(false)
+    private var hasAudioPermission by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,23 +82,37 @@ class MainActivity : ComponentActivity() {
         createNotificationChannel()
 
         val requestPermissionLauncher = registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted: Boolean ->
-            hasNotificationPermission = isGranted
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            hasNotificationPermission = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: hasNotificationPermission
+            hasAudioPermission = permissions[Manifest.permission.RECORD_AUDIO] ?: hasAudioPermission
         }
 
+        val permissionsToRequest = mutableListOf<String>()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                hasNotificationPermission = true
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                hasNotificationPermission = true
             }
         } else {
             hasNotificationPermission = true
         }
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
+        } else {
+            hasAudioPermission = true
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+
         setContent {
             MainScreen(
+                hasAudioPermission = hasAudioPermission,
                 onTriggerNotification = { message ->
                     if (hasNotificationPermission) {
                         sendNotification("ESP32 Sensor Alert", message)
@@ -101,14 +124,10 @@ class MainActivity : ComponentActivity() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "Sensor Alerts"
-            val descriptionText = "Notifications for ESP32 Ultrasonic Sensor"
-            val importance = NotificationManager.IMPORTANCE_HIGH
-            val channel = NotificationChannel("SENSOR_CHANNEL", name, importance).apply {
-                description = descriptionText
+            val channel = NotificationChannel("SENSOR_CHANNEL", "Sensor Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Notifications for ESP32 Ultrasonic Sensor"
             }
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -133,7 +152,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen(onTriggerNotification: (String) -> Unit) {
+fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> Unit) {
     var ipAddress by remember { mutableStateOf("192.168.4.1") }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -206,18 +225,15 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                                 trippedAudio = json.optString("sensor_tripped_audio", "none")
                                 clearedAudio = json.optString("sensor_cleared_audio", "none")
                                 
-                                // Only update volume if it exists
                                 if (json.has("audio_volume")) {
                                     audioVolume = json.optDouble("audio_volume", 50.0).toFloat()
                                 }
                                 
-                                // Update Slider states if user isn't actively dragging them
                                 if (activeDrag != "ll" && json.has("low_left")) llAngle = json.getJSONObject("low_left").optDouble("angle", 90.0).toFloat()
                                 if (activeDrag != "hl" && json.has("high_left")) hlAngle = json.getJSONObject("high_left").optDouble("angle", 90.0).toFloat()
                                 if (activeDrag != "lr" && json.has("low_right")) lrAngle = json.getJSONObject("low_right").optDouble("angle", 90.0).toFloat()
                                 if (activeDrag != "hr" && json.has("high_right")) hrAngle = json.getJSONObject("high_right").optDouble("angle", 90.0).toFloat()
 
-                                // Notification Fire Logic (Fires once upon edge transition false->true)
                                 if (safetyLock && !lastLockState) {
                                     if (notifyOnTrip) {
                                         onTriggerNotification("Obstacle Detected! Distance: ${sensorDistance}cm")
@@ -228,15 +244,12 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                         }
                         connection.disconnect()
                     }
-                } catch (e: Exception) {
-                    // Ignore transient network errors
-                }
+                } catch (e: Exception) {}
                 delay(800) // Poll interval
             }
         }
     }
 
-    // Generic Network Callers
     fun sendPostRequest(endpoint: String, payload: JSONObject) {
         scope.launch(Dispatchers.IO) {
             try {
@@ -264,8 +277,8 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
         }
     }
 
-    val pagerState = rememberPagerState(pageCount = { 3 })
-    val tabs = listOf("Robot & Sensor", "Claw", "Camera")
+    val pagerState = rememberPagerState(pageCount = { 4 })
+    val tabs = listOf("Wi-Fi Setup", "Robot & Audio", "Claw", "Camera")
 
     Column(modifier = Modifier.fillMaxSize().background(BgColor)) {
         // IP Address & Connection Header
@@ -298,20 +311,30 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
         TabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = CardColor,
-            contentColor = PrimaryColor
+            contentColor = PrimaryColor,
+            divider = { HorizontalDivider(color = PrimaryColor) }
         ) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold) }
+                    text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                 )
             }
         }
 
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
             when (page) {
-                0 -> RobotTab(
+                0 -> WifiTab(
+                    ipAddress = ipAddress,
+                    onSaveWifi = { ssid, pass -> 
+                        sendPostRequest("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
+                    },
+                    onForceAp = { sendPostRequest("/switch_to_ap", JSONObject()) },
+                    onUseWifi = { sendPostRequest("/switch_to_wifi", JSONObject()) }
+                )
+                1 -> RobotTab(
+                    ipAddress = ipAddress,
                     sensorEnabled = sensorEnabled,
                     safetyLock = safetyLock,
                     sensorDistance = sensorDistance,
@@ -326,6 +349,7 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                     hlAngle = hlAngle,
                     lrAngle = lrAngle,
                     hrAngle = hrAngle,
+                    hasAudioPermission = hasAudioPermission,
                     onNotifyToggle = { notifyOnTrip = it },
                     onSyncToggle = { syncEnabled = it },
                     onSliderChanged = { id, angle ->
@@ -355,17 +379,13 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                         val json = JSONObject().apply { put("action", act) }
                         sendPostRequest("/action", json)
                     },
-                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) },
-                    onWalkieTalkie = { 
-                        Toast.makeText(context, "Note: Wi-Fi audio streaming requires a C++ Firmware upgrade. Playing audio locally on Robot speaker instead.", Toast.LENGTH_LONG).show()
-                        sendPostRequest("/audio_play", JSONObject().apply { put("sound", "record_3s") })
-                    }
+                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) }
                 )
-                1 -> ClawTab(
+                2 -> ClawTab(
                     onClawCommand = { cmd -> sendGetRequest("/claw?cmd=$cmd") },
                     onClawAngle = { angle -> sendGetRequest("/claw?angle=$angle") }
                 )
-                2 -> CameraTab(
+                3 -> CameraTab(
                     ipAddress = ipAddress,
                     onFlipCamera = { sendPostRequest("/cam_flip", JSONObject()) }
                 )
@@ -375,7 +395,103 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
 }
 
 @Composable
+fun WifiTab(
+    ipAddress: String,
+    onSaveWifi: (String, String) -> Unit,
+    onForceAp: () -> Unit,
+    onUseWifi: () -> Unit
+) {
+    var ssidList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedSsid by remember { mutableStateOf("") }
+    var wifiPassword by remember { mutableStateOf("") }
+    var isScanning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
+    ) {
+        CardContainer(title = "Wi-Fi Provisioning") {
+            HtmlButton(
+                text = if (isScanning) "Scanning..." else "Scan Wi-Fi Networks",
+                color = BtnGray,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                isScanning = true
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val url = URL("http://$ipAddress/scan")
+                        val conn = url.openConnection() as HttpURLConnection
+                        val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                        val arr = JSONArray(resp)
+                        val list = mutableListOf<String>()
+                        for (i in 0 until arr.length()) list.add(arr.getString(i))
+                        
+                        withContext(Dispatchers.Main) {
+                            ssidList = list
+                            if (list.isNotEmpty()) selectedSsid = list[0]
+                            isScanning = false
+                            Toast.makeText(context, "Found ${list.size} networks", Toast.LENGTH_SHORT).show()
+                        }
+                        conn.disconnect()
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            isScanning = false
+                            Toast.makeText(context, "Scan Failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+
+            LabeledDropdown("Target SSID", selectedSsid, ssidList) { selectedSsid = it }
+            
+            Spacer(modifier = Modifier.height(15.dp))
+            OutlinedTextField(
+                value = wifiPassword,
+                onValueChange = { wifiPassword = it },
+                label = { Text("Wi-Fi Password", color = PrimaryColor) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryColor,
+                    unfocusedBorderColor = BtnGray,
+                    focusedTextColor = TextColor,
+                    unfocusedTextColor = TextColor
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(15.dp))
+            HtmlButton("Save and Connect", BtnGreen, Modifier.fillMaxWidth()) {
+                if (selectedSsid.isEmpty()) {
+                    Toast.makeText(context, "Select an SSID first!", Toast.LENGTH_SHORT).show()
+                } else {
+                    onSaveWifi(selectedSsid, wifiPassword)
+                    Toast.makeText(context, "Credentials Saved! Robot Rebooting...", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        CardContainer(title = "Quick Boot Mode Switch") {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HtmlButton("Force AP Mode", BtnOrange, Modifier.weight(1f).padding(end = 4.dp)) { 
+                    onForceAp()
+                    Toast.makeText(context, "Forcing AP Mode... Rebooting...", Toast.LENGTH_LONG).show()
+                }
+                HtmlButton("Use Saved Wi-Fi", BtnGreen, Modifier.weight(1f).padding(start = 4.dp)) { 
+                    onUseWifi()
+                    Toast.makeText(context, "Switching to Wi-Fi... Rebooting...", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun RobotTab(
+    ipAddress: String,
     sensorEnabled: Boolean,
     safetyLock: Boolean,
     sensorDistance: Double,
@@ -390,15 +506,59 @@ fun RobotTab(
     hlAngle: Float,
     lrAngle: Float,
     hrAngle: Float,
+    hasAudioPermission: Boolean,
     onNotifyToggle: (Boolean) -> Unit,
     onSyncToggle: (Boolean) -> Unit,
     onSliderChanged: (String, Float) -> Unit,
     onSliderChangeFinished: () -> Unit,
     onSensorConfigUpdate: (String, String, String, String, Boolean) -> Unit,
     onRobotAction: (String) -> Unit,
-    onAudioCommand: (String, JSONObject) -> Unit,
-    onWalkieTalkie: () -> Unit
+    onAudioCommand: (String, JSONObject) -> Unit
 ) {
+    val context = LocalContext.current
+    var isStreamingMic by remember { mutableStateOf(false) }
+    var socketHolder by remember { mutableStateOf<Socket?>(null) }
+    var audioRecordHolder by remember { mutableStateOf<AudioRecord?>(null) }
+
+    fun startWalkieTalkie() {
+        if (!hasAudioPermission) {
+            Toast.makeText(context, "Microphone Permission Required!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        isStreamingMic = true
+        Thread {
+            try {
+                val socket = Socket(ipAddress, 83)
+                socketHolder = socket
+                val outStream = socket.getOutputStream()
+                val bufferSize = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                
+                if (ActivityCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    val audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
+                    audioRecordHolder = audioRecord
+                    audioRecord.startRecording()
+                    
+                    val buffer = ByteArray(bufferSize)
+                    while (isStreamingMic) {
+                        val read = audioRecord.read(buffer, 0, buffer.size)
+                        if (read > 0) {
+                            outStream.write(buffer, 0, read)
+                        }
+                    }
+                    audioRecord.stop()
+                    audioRecord.release()
+                }
+                socket.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }.start()
+    }
+
+    fun stopWalkieTalkie() {
+        isStreamingMic = false
+        try { socketHolder?.close() } catch (e: Exception) {}
+        try { audioRecordHolder?.release() } catch (e: Exception) {}
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
     ) {
@@ -414,6 +574,85 @@ fun RobotTab(
             }
             Spacer(modifier = Modifier.height(15.dp))
         }
+
+        // ==========================================
+        // AUDIO & SPEAKER OUTPUT CARD (Moved to top)
+        // ==========================================
+        CardContainer(title = "Audio & Speaker Output") {
+            var localVolume by remember { mutableStateOf(audioVolume) }
+            LaunchedEffect(audioVolume) { localVolume = audioVolume }
+
+            Text("Volume Control: ${localVolume.toInt()}%", color = TextColor)
+            Slider(
+                value = localVolume,
+                onValueChange = { localVolume = it },
+                onValueChangeFinished = { onAudioCommand("/audio_config", JSONObject().apply { put("volume", localVolume.toInt()) }) },
+                valueRange = 0f..100f,
+                colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
+            )
+
+            Spacer(modifier = Modifier.height(15.dp))
+            var selectedTestSound by remember { mutableStateOf("dog_bark") }
+            LabeledDropdown("Test Digital Audio Stream", selectedTestSound, listOf("dog_bark")) { selectedTestSound = it }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HtmlButton("Play", Color(0xFF14B8A6), Modifier.weight(1f).padding(end = 4.dp)) { 
+                    onAudioCommand("/audio_play", JSONObject().apply { put("sound", selectedTestSound) })
+                }
+                HtmlButton("Stop Sound", BtnRed, Modifier.weight(1f).padding(start = 4.dp)) { 
+                    onAudioCommand("/audio_stop", JSONObject())
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            // WALKIE-TALKIE NATIVE TOUCH IMPLEMENTATION
+            val interactionSource = Modifier.pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        startWalkieTalkie()
+                        tryAwaitRelease()
+                        stopWalkieTalkie()
+                    }
+                )
+            }
+
+            Box(
+                modifier = Modifier.fillMaxWidth().height(50.dp).background(if (isStreamingMic) BtnRed else BtnPurple, RoundedCornerShape(10.dp)).then(interactionSource),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (isStreamingMic) "Live Transmitting..." else "Hold to Speak (Walkie Talkie)", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            
+            Spacer(modifier = Modifier.height(15.dp))
+            
+            // Listen to Robot Mic
+            var listenMicActive by remember { mutableStateOf(false) }
+            if (listenMicActive) {
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        }
+                    },
+                    update = { view ->
+                        val html = "<html><body style='margin:0;padding:0;'><audio controls autoplay style='width:100%;height:50px;'><source src='http://$ipAddress:82/' type='audio/wav'></audio></body></html>"
+                        view.loadDataWithBaseURL("http://$ipAddress/", html, "text/html", "UTF-8", null)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                )
+            }
+            HtmlButton(
+                text = if(listenMicActive) "Stop Listening to Robot" else "Listen to Robot Mic",
+                color = if(listenMicActive) BtnRed else BtnBlue,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+            ) {
+                listenMicActive = !listenMicActive
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // ==========================================
         // HYPERSONIC SENSOR CARD
@@ -444,17 +683,14 @@ fun RobotTab(
                 onSensorConfigUpdate(it, clearedAction, trippedAudio, clearedAudio, sensorEnabled) 
             }
             Spacer(modifier = Modifier.height(10.dp))
-            
             LabeledDropdown("Action When Cleared", clearedAction, physicalActions) { 
                 onSensorConfigUpdate(trippedAction, it, trippedAudio, clearedAudio, sensorEnabled) 
             }
             Spacer(modifier = Modifier.height(10.dp))
-            
             LabeledDropdown("Audio Sound When Tripped", trippedAudio, audioActions) { 
                 onSensorConfigUpdate(trippedAction, clearedAction, it, clearedAudio, sensorEnabled) 
             }
             Spacer(modifier = Modifier.height(10.dp))
-            
             LabeledDropdown("Audio Sound When Cleared", clearedAudio, audioActions) { 
                 onSensorConfigUpdate(trippedAction, clearedAction, trippedAudio, it, sensorEnabled) 
             }
@@ -467,51 +703,7 @@ fun RobotTab(
                     colors = SwitchDefaults.colors(checkedThumbColor = PrimaryColor, checkedTrackColor = Color(0xFF334155))
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("Phone Push Notification on Trip", color = TextColor)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // ==========================================
-        // AUDIO & SPEAKER OUTPUT CARD
-        // ==========================================
-        CardContainer(title = "Audio & Speaker Output") {
-            var localVolume by remember { mutableStateOf(audioVolume) }
-            
-            // Sync local slider with ESP32 reported volume
-            LaunchedEffect(audioVolume) { localVolume = audioVolume }
-
-            Text("Volume Control: ${localVolume.toInt()}%", color = TextColor)
-            Slider(
-                value = localVolume,
-                onValueChange = { localVolume = it },
-                onValueChangeFinished = { 
-                    val json = JSONObject().apply { put("volume", localVolume.toInt()) }
-                    onAudioCommand("/audio_config", json)
-                },
-                valueRange = 0f..100f,
-                colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
-            )
-
-            Spacer(modifier = Modifier.height(15.dp))
-
-            var selectedTestSound by remember { mutableStateOf("dog_bark") }
-            LabeledDropdown("Test Digital Audio Stream", selectedTestSound, listOf("dog_bark")) { selectedTestSound = it }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                HtmlButton("Play", Color(0xFF14B8A6), Modifier.weight(1f).padding(end = 4.dp)) { 
-                    onAudioCommand("/audio_play", JSONObject().apply { put("sound", selectedTestSound) })
-                }
-                HtmlButton("Stop Sound", BtnRed, Modifier.weight(1f).padding(start = 4.dp)) { 
-                    onAudioCommand("/audio_stop", JSONObject())
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            HtmlButton("Listen to Robot (Hold/Mic)", BtnPurple, Modifier.fillMaxWidth()) {
-                onWalkieTalkie()
+                Text("Push Notification on Trip", color = TextColor)
             }
         }
 
@@ -521,7 +713,6 @@ fun RobotTab(
         // ROBOT MOVEMENT CARD
         // ==========================================
         CardContainer(title = "Robot Movement") {
-            // Explicitly defining the type avoids a compiler resolution bug
             val buttons: List<Pair<String, Color>> = listOf(
                 "forward" to BtnBlue, "backward" to BtnBlue,
                 "step_forward" to BtnBlue, "step_backward" to BtnBlue,
@@ -536,17 +727,9 @@ fun RobotTab(
             buttons.chunked(2).forEach { row ->
                 Row(modifier = Modifier.fillMaxWidth()) {
                     row.forEach { (action, color) ->
-                        HtmlButton(
-                            text = action.uppercase().replace("_", " "),
-                            color = color,
-                            modifier = Modifier.weight(1f).padding(4.dp)
-                        ) {
-                            onRobotAction(action)
-                        }
+                        HtmlButton(action.uppercase().replace("_", " "), color, Modifier.weight(1f).padding(4.dp)) { onRobotAction(action) }
                     }
-                    if (row.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f).padding(4.dp))
-                    }
+                    if (row.size == 1) Spacer(modifier = Modifier.weight(1f).padding(4.dp))
                 }
             }
         }
@@ -783,60 +966,4 @@ fun LabeledDropdown(
             onValueChange = {},
             readOnly = true,
             label = { Text(label, color = PrimaryColor) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                focusedTextColor = TextColor,
-                unfocusedTextColor = TextColor,
-                focusedBorderColor = PrimaryColor,
-                unfocusedBorderColor = BtnGray
-            ),
-            modifier = Modifier.menuAnchor().fillMaxWidth()
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(CardColor)
-        ) {
-            options.forEach { opt ->
-                DropdownMenuItem(
-                    text = { Text(opt.uppercase().replace("_", " "), color = TextColor) },
-                    onClick = {
-                        onValueChange(opt)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun CardContainer(title: String, content: @Composable () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(CardColor, RoundedCornerShape(16.dp))
-            .padding(20.dp)
-    ) {
-        Text(title, color = PrimaryColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        HorizontalDivider(color = Color(0xFF334155), modifier = Modifier.padding(vertical = 10.dp))
-        content()
-    }
-}
-
-@Composable
-fun HtmlButton(
-    text: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = color),
-        shape = RoundedCornerShape(10.dp),
-        modifier = modifier.height(50.dp)
-    ) {
-        Text(text, fontWeight = FontWeight.Bold, color = Color.White)
-    }
-}
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expa

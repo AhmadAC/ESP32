@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions for local network communication and push notifications -->
+    <!-- Permissions for local network communication, push notifications, and walkie-talkie -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="true"
@@ -24,7 +25,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Keeping your existing polling service registered so it doesn't crash -->
         <service android:name=".HttpPollingService" android:exported="false" />
         
     </application>
