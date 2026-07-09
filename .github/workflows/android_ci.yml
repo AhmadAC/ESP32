@@ -1,12 +1,14 @@
 # File: .github/workflows/android_ci.yml
 
-name: MrCooperESP32 Android CI # <--- UPDATED NAME HERE
+name: MrCooperESP32 Android CI
 
 on:
   push:
-    branches: [ "esp", "master" ] # Or your default branch
+    branches: [ "esp", "master" ]
   pull_request:
     branches: [ "esp", "master" ]
+  # Allows you to trigger the build manually from the Actions tab in GitHub
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -15,7 +17,7 @@ jobs:
       # Choose a version compatible with your Android Gradle Plugin (AGP).
       # For AGP 8.4.0 (used in root build.gradle), Gradle 8.6 or higher is needed.
       # Check AGP release notes for compatibility.
-      GRADLE_VERSION_TO_USE: '8.6' # Updated to Gradle 8.6
+      GRADLE_VERSION_TO_USE: '8.6'
 
     runs-on: ubuntu-latest
 
@@ -26,50 +28,33 @@ jobs:
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        java-version: '17' # Common for modern Android development
+        java-version: '17'
         distribution: 'temurin'
 
     # This step installs the specified version of Gradle and adds the 'gradle' command to the PATH.
+    # The setup-gradle action has its own, built-in cache for the Gradle User Home.
+    # We do NOT use manual actions/cache@v4 to prevent "400 Bad Request" conflict errors.
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3 # Using setup-gradle v3
+      uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: ${{ env.GRADLE_VERSION_TO_USE }}
-        # setup-gradle action has its own caching for Gradle User Home,
-        # which can be beneficial. You can further configure it if needed.
-        # See https://github.com/gradle/actions/blob/main/setup-gradle/README.md#caching
 
     # This step uses the 'gradle' command (from Setup Gradle step) to initialize
     # the Gradle wrapper files (gradlew, gradlew.bat, gradle-wrapper.jar, gradle-wrapper.properties)
     # in the runner's workspace. The generated gradle-wrapper.properties will point to GRADLE_VERSION_TO_USE.
     - name: Initialize Gradle Wrapper
       run: gradle wrapper --gradle-version ${{ env.GRADLE_VERSION_TO_USE }} --distribution-type bin
-      # Adding --distribution-type bin to ensure it fetches the binary distribution
 
     - name: Grant execute permission for gradlew
       run: chmod +x ./gradlew
 
-    # Recommended: Cache Gradle dependencies downloaded by the wrapper.
-    # This cache uses the wrapper files generated in the previous step and other project build files.
-    - name: Cache Gradle packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper/dists
-        # MODIFIED KEY: Added a version suffix '-v1' to help invalidate the cache if needed.
-        # Increment this suffix (e.g., -v2, -v3) or use a dynamic value like ${{ github.run_id }}
-        # if you suspect stale cache issues and need to force a fresh download.
-        key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION_TO_USE }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}-v1
-        restore-keys: |
-          ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION_TO_USE }}-
-
     - name: Build with Gradle Wrapper
-      # Adding --stacktrace for more detailed error output if the build fails
       run: ./gradlew assembleDebug --stacktrace
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: MrCoopersESP32 # Name of the artifact
-        path: app/build/outputs/apk/debug/MrCoopersESP32.apk # Path to the APK
-        if-no-files-found: error # Fail if APK not found
+        name: MrCoopersESP32 # Name of the artifact download
+        # Using a wildcard match guarantees success even if the build output structure changes slightly
+        path: app/build/outputs/apk/debug/*.apk 
+        if-no-files-found: error
