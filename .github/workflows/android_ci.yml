@@ -4,9 +4,9 @@ name: MrCooperESP32 Android CI # <--- UPDATED NAME HERE
 
 on:
   push:
-    branches: [ "main", "master" ] # Or your default branch
+    branches: [ "esp", "master" ] # Or your default branch
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "esp", "master" ]
 
 jobs:
   build:
