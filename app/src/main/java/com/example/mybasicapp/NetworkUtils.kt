@@ -26,7 +26,8 @@ fun getLocalWifiSubnetPrefix(context: Context): String? {
         val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val dhcp = wm.dhcpInfo ?: return null
         val ip = dhcp.ipAddress
-        if (ip == 0) null else "${ip & 0xFF}.${(ip shr 8) & 0xFF}.${(ip shr 16) & 0xFF}."
+        // FIX: Replaced Java '&' with Kotlin 'and' bitwise operator
+        if (ip == 0) null else "${ip and 0xFF}.${(ip shr 8) and 0xFF}.${(ip shr 16) and 0xFF}."
     } catch (e: Exception) { null }
 }
 
