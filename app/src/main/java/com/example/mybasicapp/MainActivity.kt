@@ -169,7 +169,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
         pendingServoPayload?.let {
             delay(40)
             try {
-                val url = URL("http://$ipAddress/servo")
+                val url = URL("http://${ipAddress}/servo")
                 withContext(Dispatchers.IO) {
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
@@ -187,7 +187,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
         if (isPolling) {
             while (true) {
                 try {
-                    val url = URL("http://$ipAddress/angles")
+                    val url = URL("http://${ipAddress}/angles")
                     withContext(Dispatchers.IO) {
                         val connection = url.openConnection() as HttpURLConnection
                         connection.requestMethod = "GET"
@@ -212,13 +212,23 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                     audioVolume = json.optDouble("audio_volume", 50.0).toFloat()
                                 }
                                 
-                                if (activeDrag != "ll" && json.has("low_left")) llAngle = json.getJSONObject("low_left").optDouble("angle", 90.0).toFloat()
-                                if (activeDrag != "hl" && json.has("high_left")) hlAngle = json.getJSONObject("high_left").optDouble("angle", 90.0).toFloat()
-                                if (activeDrag != "lr" && json.has("low_right")) lrAngle = json.getJSONObject("low_right").optDouble("angle", 90.0).toFloat()
-                                if (activeDrag != "hr" && json.has("high_right")) hrAngle = json.getJSONObject("high_right").optDouble("angle", 90.0).toFloat()
+                                if (activeDrag != "ll" && json.has("low_left")) {
+                                    llAngle = json.getJSONObject("low_left").optDouble("angle", 90.0).toFloat()
+                                }
+                                if (activeDrag != "hl" && json.has("high_left")) {
+                                    hlAngle = json.getJSONObject("high_left").optDouble("angle", 90.0).toFloat()
+                                }
+                                if (activeDrag != "lr" && json.has("low_right")) {
+                                    lrAngle = json.getJSONObject("low_right").optDouble("angle", 90.0).toFloat()
+                                }
+                                if (activeDrag != "hr" && json.has("high_right")) {
+                                    hrAngle = json.getJSONObject("high_right").optDouble("angle", 90.0).toFloat()
+                                }
 
                                 if (safetyLock && !lastLockState) {
-                                    if (notifyOnTrip) onTriggerNotification("Obstacle Detected! Distance: ${sensorDistance}cm")
+                                    if (notifyOnTrip) {
+                                        onTriggerNotification("Obstacle Detected! Distance: ${sensorDistance}cm")
+                                    }
                                 }
                                 lastLockState = safetyLock
                             }
@@ -240,7 +250,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     fun sendPostRequest(endpoint: String, payload: JSONObject) {
         scope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://$ipAddress$endpoint")
+                val url = URL("http://${ipAddress}${endpoint}")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -255,7 +265,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     fun sendGetRequest(endpoint: String) {
         scope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://$ipAddress$endpoint")
+                val url = URL("http://${ipAddress}${endpoint}")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.responseCode
@@ -302,7 +312,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         },
                         onFinished = { success ->
                             isScanningSubnet = false
-                            if (!success) Toast.makeText(context, "Could not locate ESP Robot.", Toast.LENGTH_LONG).show()
+                            if (!success) {
+                                Toast.makeText(context, "Could not locate ESP Robot.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     )
                 }
@@ -385,10 +397,38 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         activeDrag = id
                         val payload = JSONObject()
                         when (id) {
-                            "ll" -> { llAngle = angle; payload.put("ll", angle.toInt()); if (syncEnabled) { lrAngle = angle; payload.put("lr", angle.toInt()) } }
-                            "hl" -> { hlAngle = angle; payload.put("hl", angle.toInt()); if (syncEnabled) { hrAngle = angle; payload.put("hr", angle.toInt()) } }
-                            "lr" -> { lrAngle = angle; payload.put("lr", angle.toInt()); if (syncEnabled) { llAngle = angle; payload.put("ll", angle.toInt()) } }
-                            "hr" -> { hrAngle = angle; payload.put("hr", angle.toInt()); if (syncEnabled) { hlAngle = angle; payload.put("hl", angle.toInt()) } }
+                            "ll" -> { 
+                                llAngle = angle
+                                payload.put("ll", angle.toInt())
+                                if (syncEnabled) { 
+                                    lrAngle = angle
+                                    payload.put("lr", angle.toInt()) 
+                                } 
+                            }
+                            "hl" -> { 
+                                hlAngle = angle
+                                payload.put("hl", angle.toInt())
+                                if (syncEnabled) { 
+                                    hrAngle = angle
+                                    payload.put("hr", angle.toInt()) 
+                                } 
+                            }
+                            "lr" -> { 
+                                lrAngle = angle
+                                payload.put("lr", angle.toInt())
+                                if (syncEnabled) { 
+                                    llAngle = angle
+                                    payload.put("ll", angle.toInt()) 
+                                } 
+                            }
+                            "hr" -> { 
+                                hrAngle = angle
+                                payload.put("hr", angle.toInt())
+                                if (syncEnabled) { 
+                                    hlAngle = angle
+                                    payload.put("hl", angle.toInt()) 
+                                } 
+                            }
                         }
                         pendingServoPayload = payload
                     },
@@ -402,7 +442,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             put("cleared_audio", cAudio)
                         }
                         sendPostRequest("/sensor", json)
-                        trippedAction = tAction; clearedAction = cAction; trippedAudio = tAudio; clearedAudio = cAudio; sensorEnabled = enabled
+                        trippedAction = tAction
+                        clearedAction = cAction
+                        trippedAudio = tAudio
+                        clearedAudio = cAudio
+                        sensorEnabled = enabled
                     },
                     onRobotAction = { act ->
                         val json = JSONObject().apply { put("action", act) }
@@ -452,12 +496,12 @@ fun discoverEspRobotOnSubnet(
             launch {
                 sem.withPermit {
                     if (locatedIp != null) return@launch
-                    val targetIp = "$prefix$host"
+                    val targetIp = "${prefix}${host}"
                     var isFound = false
                     for (endpoint in listOf("/angles", "/status")) {
                         if (locatedIp != null) break
                         try {
-                            val conn = URL("http://$targetIp$endpoint").openConnection() as HttpURLConnection
+                            val conn = URL("http://${targetIp}${endpoint}").openConnection() as HttpURLConnection
                             conn.connectTimeout = 450
                             conn.readTimeout = 450
                             if (conn.responseCode == 200) {
@@ -466,7 +510,9 @@ fun discoverEspRobotOnSubnet(
                             }
                         } catch (e: Exception) {}
                     }
-                    if (isFound) locatedIp = targetIp
+                    if (isFound) {
+                        locatedIp = targetIp
+                    }
                     synchronized(this) {
                         completed++
                         scope.launch(Dispatchers.Main) { onProgress(completed.toFloat() / 254f) }
@@ -523,7 +569,7 @@ fun WifiTab(
                 scope.launch(Dispatchers.IO) {
                     val robotNetworks = mutableListOf<String>()
                     try {
-                        val url = URL("http://$ipAddress/scan")
+                        val url = URL("http://${ipAddress}/scan")
                         val conn = url.openConnection() as HttpURLConnection
                         conn.connectTimeout = 4000
                         val resp = conn.inputStream.bufferedReader().use { it.readText() }
@@ -826,8 +872,8 @@ fun AudioStreamPlayer(ipAddress: String, active: Boolean) {
         }
 
         DisposableEffect(ipAddress) {
-            val html = "<html><body style='margin:0;padding:0;'><audio id='aud' controls autoplay style='width:100%;height:50px;'><source src='http://$ipAddress:82/' type='audio/wav'></audio></body></html>"
-            webView.loadDataWithBaseURL("http://$ipAddress/", html, "text/html", "UTF-8", null)
+            val html = "<html><body style='margin:0;padding:0;'><audio id='aud' controls autoplay style='width:100%;height:50px;'><source src='http://${ipAddress}:82/' type='audio/wav'></audio></body></html>"
+            webView.loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
             
             onDispose {
                 webView.stopLoading()
@@ -928,7 +974,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                         update = { view ->
                             val currentUrl = view.url ?: ""
                             if (!currentUrl.startsWith("data:text/html")) {
-                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://$ipAddress:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
+                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
                                 view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             }
                             view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg)';", null)
@@ -961,7 +1007,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
 suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
     withContext(Dispatchers.IO) {
         try {
-            val url = URL("http://$ipAddress/capture")
+            val url = URL("http://${ipAddress}/capture")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
