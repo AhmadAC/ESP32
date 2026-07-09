@@ -1,10 +1,44 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
-    // Define the Android Gradle Plugin version. 'apply false' means it's not applied to the root project,
-    // but makes this version available to sub-projects like ':app'.
-    // AGP 8.4.0 is a stable version compatible with Gradle 8.5.
-    id("com.android.application") version "8.4.0" apply false
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
 
-    // If you were using Kotlin (which this project is not, based on .java files and dependencies):
-    // id("org.jetbrains.kotlin.android") version "1.9.23" apply false // Check for latest compatible Kotlin version
+android {
+    namespace 'com.cooper.basicapk'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.cooper.basicapk"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // Kotlin Coroutines for asynchronous HTTP requests
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
