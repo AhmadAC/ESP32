@@ -6,11 +6,12 @@ plugins {
 }
 
 android {
-    namespace 'com.cooper.basicapk'
+    // Configured to match the package name used in your Java codebase
+    namespace 'com.example.mybasicapp' 
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.cooper.basicapk"
+        applicationId "com.example.mybasicapp"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -40,6 +41,9 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // Resolves the OkHttp compilation errors
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     
     // Kotlin Coroutines for asynchronous HTTP requests
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
