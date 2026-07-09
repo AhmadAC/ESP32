@@ -3,15 +3,10 @@ package com.cooper.basicapk
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
@@ -34,18 +29,19 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 
+// Explicitly import the R class generated under your main application namespace
+import com.example.mybasicapp.R
+
 class MainActivity : AppCompatActivity() {
 
     private val PERMISSION_REQ_CODE = 101
 
-    private lateinit var btnAutoAP: Button
     private lateinit var etIpAddress: EditText
     private lateinit var btnConnect: Button
     private lateinit var webViewCam: WebView
     private lateinit var btnPushToTalk: Button
 
     private var espIp = "192.168.4.1"
-    private var detectedGateway = "192.168.4.1"
     private var isRecording = false
     private var udpSocket: DatagramSocket? = null
 
@@ -60,14 +56,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        btnAutoAP = findViewById(R.id.btnAutoAP)
         etIpAddress = findViewById(R.id.etIpAddress)
         btnConnect = findViewById(R.id.btnConnect)
         webViewCam = findViewById(R.id.webViewCam)
         btnPushToTalk = findViewById(R.id.btnPushToTalk)
-
-        // Bind application to Wi-Fi to avoid cellular data intercepting AP traffic
-        forceWiFiBinding()
 
         // Setup WebView
         webViewCam.settings.apply {
@@ -77,12 +69,6 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_NO_CACHE
         }
         webViewCam.webViewClient = WebViewClient()
-
-        // Auto AP Gateway Discovery Action
-        btnAutoAP.setOnClickListener {
-            etIpAddress.setText(detectedGateway)
-            Toast.makeText(this, "Set to Gateway: $detectedGateway", Toast.LENGTH_SHORT).show()
-        }
 
         // Connection Action
         btnConnect.setOnClickListener {
@@ -125,36 +111,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- NETWORK BINDING & DISCOVERY ---
-
-    private fun forceWiFiBinding() {
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .build()
-            
-        connectivityManager.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                super.onAvailable(network)
-                
-                // 1. Force the app to use Wi-Fi instead of Cellular (Crucial for AP mode with no internet)
-                connectivityManager.bindProcessToNetwork(network)
-                Log.d("WIFI", "App strictly bound to Wi-Fi network.")
-
-                // 2. Extract the Gateway IP (which is the ESP32 when connected to its AP)
-                val linkProperties = connectivityManager.getLinkProperties(network)
-                val gateway = linkProperties?.routes?.firstOrNull { it.isDefaultRoute }?.gateway?.hostAddress
-                
-                if (gateway != null) {
-                    detectedGateway = gateway
-                    Log.d("WIFI", "Detected ESP32 Gateway: $detectedGateway")
-                }
-            }
-        })
-    }
-
-    // --- HTTP CONTROL LOGIC ---
-
     private fun setupActionButton(buttonId: Int, actionName: String) {
         findViewById<Button>(buttonId).setOnClickListener {
             sendRobotAction(actionName)
@@ -194,7 +150,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-                val audioRecord = AudioRecord(
+                val recordBufferInstance = AudioRecord(
                     MediaRecorder.AudioSource.MIC,
                     sampleRate,
                     channelConfig,
@@ -206,19 +162,19 @@ class MainActivity : AppCompatActivity() {
                 val espAddress = InetAddress.getByName(espIp)
 
                 val buffer = ByteArray(minBufSize)
-                audioRecord.startRecording()
+                recordBufferInstance.startRecording()
                 Log.d("AUDIO", "Started UDP audio stream to $espIp:$espUdpPort")
 
                 while (isRecording) {
-                    val bytesRead = audioRecord.read(buffer, 0, buffer.size)
+                    val bytesRead = recordBufferInstance.read(buffer, 0, buffer.size)
                     if (bytesRead > 0) {
                         val packet = DatagramPacket(buffer, bytesRead, espAddress, espUdpPort)
                         udpSocket?.send(packet)
                     }
                 }
 
-                audioRecord.stop()
-                audioRecord.release()
+                recordBufferInstance.stop()
+                recordBufferInstance.release()
                 udpSocket?.close()
                 Log.d("AUDIO", "Stopped UDP audio stream")
 
