@@ -29,8 +29,8 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 
-// Explicitly import the R class generated under your main application namespace
-import com.example.mybasicapp.R
+// Import Walkie-Talkie resources within its scope
+import com.cooper.basicapk.R
 
 class MainActivity : AppCompatActivity() {
 

@@ -6,12 +6,12 @@ plugins {
 }
 
 android {
-    // Configured to match the package name used in your Java codebase
-    namespace 'com.example.mybasicapp' 
+    // Return namespace to your Walkie-Talkie package scope
+    namespace 'com.cooper.basicapk'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.mybasicapp"
+        applicationId "com.cooper.basicapk"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -34,6 +34,15 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    // Surgical Exclusion: Prevents the broken legacy template files from compiling
+    sourceSets {
+        main {
+            java {
+                exclude 'com/example/mybasicapp/**'
+            }
+        }
+    }
 }
 
 dependencies {
@@ -42,7 +51,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     
-    // Resolves the OkHttp compilation errors
+    // OkHttp dependency for local network operations
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     
     // Kotlin Coroutines for asynchronous HTTP requests
