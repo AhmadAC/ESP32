@@ -47,8 +47,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var audioVolume by remember { mutableStateOf(50f) }
     var lastLockState by remember { mutableStateOf(false) }
     
+    // Scanner UI states
     var isScanningSubnet by remember { mutableStateOf(false) }
     var subnetProgress by remember { mutableStateOf(0f) }
+    var discoveredIps by remember { mutableStateOf<List<String>>(emptyList()) }
+    var ipsDropdownExpanded by remember { mutableStateOf(false) }
 
     var syncEnabled by remember { mutableStateOf(false) }
     var llAngle by remember { mutableStateOf(90f) }
@@ -176,38 +179,58 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
-                value = ipAddress,
-                onValueChange = { ipAddress = it },
-                label = { Text("ESP32 IP", color = PrimaryColor) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
-                    focusedTextColor = TextColor, unfocusedTextColor = TextColor
-                ),
-                modifier = Modifier.weight(1f)
-            )
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = ipAddress,
+                    onValueChange = { ipAddress = it },
+                    label = { Text("ESP32 IP", color = PrimaryColor) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                        focusedTextColor = TextColor, unfocusedTextColor = TextColor
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                DropdownMenu(
+                    expanded = ipsDropdownExpanded,
+                    onDismissRequest = { ipsDropdownExpanded = false },
+                    modifier = Modifier.background(CardColor)
+                ) {
+                    discoveredIps.forEach { ip ->
+                        DropdownMenuItem(
+                            text = { Text(ip, color = TextColor, fontWeight = FontWeight.Bold) },
+                            onClick = {
+                                ipAddress = ip
+                                ipsDropdownExpanded = false
+                                isPolling = true // Automatically connect when clicked
+                                Toast.makeText(context, "Connecting to $ip", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.width(8.dp))
             
             HtmlButton(
-                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Auto-Find",
+                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Scan Net",
                 color = if (isScanningSubnet) BtnOrange else BtnPurple,
                 modifier = Modifier.width(100.dp)
             ) {
                 if (!isScanningSubnet) {
                     isScanningSubnet = true
-                    discoverEspRobotOnSubnet(
+                    discoveredIps = emptyList()
+                    scanSubnetForWebServers(
                         context = context,
                         scope = scope,
                         onProgress = { progress -> subnetProgress = progress },
-                        onFound = { foundIp ->
-                            ipAddress = foundIp
-                            isPolling = true
-                            Toast.makeText(context, "ESP Found at $foundIp!", Toast.LENGTH_SHORT).show()
-                        },
-                        onFinished = { success ->
+                        onFinished = { foundIps ->
                             isScanningSubnet = false
-                            if (!success) {
-                                Toast.makeText(context, "Could not locate ESP Robot.", Toast.LENGTH_LONG).show()
+                            if (foundIps.isNotEmpty()) {
+                                discoveredIps = foundIps
+                                ipsDropdownExpanded = true
+                                Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
                             }
                         }
                     )

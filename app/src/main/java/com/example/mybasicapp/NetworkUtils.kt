@@ -26,45 +26,34 @@ fun getLocalWifiSubnetPrefix(context: Context): String? {
         val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val dhcp = wm.dhcpInfo ?: return null
         val ip = dhcp.ipAddress
-        // FIX: Replaced Java '&' with Kotlin 'and' bitwise operator
         if (ip == 0) null else "${ip and 0xFF}.${(ip shr 8) and 0xFF}.${(ip shr 16) and 0xFF}."
     } catch (e: Exception) { null }
 }
 
-fun discoverEspRobotOnSubnet(
+fun scanSubnetForWebServers(
     context: Context,
     scope: CoroutineScope,
     onProgress: (Float) -> Unit,
-    onFound: (String) -> Unit,
-    onFinished: (Boolean) -> Unit
+    onFinished: (List<String>) -> Unit
 ) {
-    val prefix = getLocalWifiSubnetPrefix(context) ?: return onFinished(false)
+    val prefix = getLocalWifiSubnetPrefix(context) ?: return onFinished(emptyList())
     scope.launch(Dispatchers.IO) {
-        val sem = Semaphore(40)
-        var locatedIp: String? = null
+        val sem = Semaphore(40) // Run up to 40 threads simultaneously
+        val foundIps = mutableListOf<String>()
         var completed = 0
 
         val jobs = (1..254).map { host ->
             launch {
                 sem.withPermit {
-                    if (locatedIp != null) return@launch
                     val targetIp = "${prefix}${host}"
-                    var isFound = false
-                    for (endpoint in listOf("/angles", "/status")) {
-                        if (locatedIp != null) break
-                        try {
-                            val conn = URL("http://${targetIp}${endpoint}").openConnection() as HttpURLConnection
-                            conn.connectTimeout = 450
-                            conn.readTimeout = 450
-                            if (conn.responseCode == 200) {
-                                isFound = true
-                                break
-                            }
-                        } catch (e: Exception) {}
-                    }
-                    if (isFound) {
-                        locatedIp = targetIp
-                    }
+                    try {
+                        // Quick TCP connection to port 80 to check if it's a web server
+                        val socket = java.net.Socket()
+                        socket.connect(java.net.InetSocketAddress(targetIp, 80), 350)
+                        socket.close()
+                        synchronized(foundIps) { foundIps.add(targetIp) }
+                    } catch (e: Exception) {}
+
                     synchronized(this) {
                         completed++
                         scope.launch(Dispatchers.Main) { onProgress(completed.toFloat() / 254f) }
@@ -72,16 +61,13 @@ fun discoverEspRobotOnSubnet(
                 }
             }
         }
-        while (completed < 254 && locatedIp == null) { delay(50) }
-        jobs.forEach { it.cancel() }
+        
+        // Wait for all 254 checks to complete
+        jobs.forEach { it.join() }
+        
         withContext(Dispatchers.Main) {
-            val result = locatedIp
-            if (result != null) {
-                onFound(result)
-                onFinished(true)
-            } else {
-                onFinished(false)
-            }
+            // Sort by the last octet (e.g., 192.168.1.5 before 192.168.1.10)
+            onFinished(foundIps.sortedBy { it.substringAfterLast('.').toInt() })
         }
     }
 }
