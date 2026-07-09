@@ -51,10 +51,13 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -183,6 +186,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var audioVolume by remember { mutableStateOf(50f) }
     var lastLockState by remember { mutableStateOf(false) }
     
+    // IP Subnet Scanning status variables
+    var isScanningSubnet by remember { mutableStateOf(false) }
+    var subnetProgress by remember { mutableStateOf(0f) }
+
     // Motor Variables
     var syncEnabled by remember { mutableStateOf(false) }
     var llAngle by remember { mutableStateOf(90f) }
@@ -320,7 +327,36 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 ),
                 modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Auto-Find Subnet Scanner Button
+            HtmlButton(
+                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Auto-Find",
+                color = if (isScanningSubnet) BtnOrange else BtnPurple,
+                modifier = Modifier.width(100.dp)
+            ) {
+                if (!isScanningSubnet) {
+                    isScanningSubnet = true
+                    discoverEspRobotOnSubnet(
+                        context = context,
+                        scope = scope,
+                        onProgress = { progress -> subnetProgress = progress },
+                        onFound = { foundIp ->
+                            ipAddress = foundIp
+                            isPolling = true // Trigger connection once located
+                            Toast.makeText(context, "ESP Found at $foundIp!", Toast.LENGTH_SHORT).show()
+                        },
+                        onFinished = { success ->
+                            isScanningSubnet = false
+                            if (!success) {
+                                Toast.makeText(context, "Could not locate ESP Robot. Check Wi-Fi connection.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            
             HtmlButton(
                 text = if (isPolling) "Disconnect" else "Connect",
                 color = if (isPolling) BtnRed else BtnGreen
@@ -446,6 +482,105 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     ipAddress = ipAddress,
                     onFlipCamera = { sendPostRequest("/cam_flip", JSONObject()) }
                 )
+            }
+        }
+    }
+}
+
+// Retrieves local subnet configurations to generate a search scope
+fun getLocalWifiSubnetPrefix(context: Context): String? {
+    return try {
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val dhcpInfo = wifiManager.dhcpInfo ?: return null
+        val ipAddress = dhcpInfo.ipAddress
+        if (ipAddress == 0) return null
+        
+        // Maps octets dynamically
+        String.format(
+            "%d.%d.%d.",
+            ipAddress & 0xff,
+            (ipAddress shr 8) & 0xff,
+            (ipAddress shr 16) & 0xff
+        )
+    } catch (e: Exception) {
+        null
+    }
+}
+
+// Scans local IP subnet asynchronously across 254 endpoints using bounded coroutine pools
+fun discoverEspRobotOnSubnet(
+    context: Context,
+    scope: CoroutineScope,
+    onProgress: (Float) -> Unit,
+    onFound: (String) -> Unit,
+    onFinished: (Boolean) -> Unit
+) {
+    val prefix = getLocalWifiSubnetPrefix(context)
+    if (prefix == null) {
+        onFinished(false)
+        return
+    }
+
+    scope.launch(Dispatchers.IO) {
+        val concurrencyLimit = Semaphore(40) // Prevents exhausting socket system descriptors
+        var locatedIp: String? = null
+        var finishedCount = 0
+
+        val jobs = (1..254).map { host ->
+            launch {
+                concurrencyLimit.withPermit {
+                    if (locatedIp != null) return@launch
+                    val targetIp = "$prefix$host"
+
+                    var isFound = false
+                    // Sweeps key endpoints representing both Robot and Claw firmware configurations
+                    for (endpoint in listOf("/angles", "/status")) {
+                        if (locatedIp != null) break
+                        try {
+                            val url = URL("http://$targetIp$endpoint")
+                            val conn = url.openConnection() as HttpURLConnection
+                            conn.connectTimeout = 450 // Low timeout for rapid connection skips
+                            conn.readTimeout = 450
+                            conn.requestMethod = "GET"
+                            val code = conn.responseCode
+                            conn.disconnect()
+                            if (code == 200) {
+                                isFound = true
+                                break
+                            }
+                        } catch (e: Exception) {}
+                    }
+
+                    if (isFound) {
+                        locatedIp = targetIp
+                    }
+
+                    synchronized(this) {
+                        finishedCount++
+                        val progress = finishedCount.toFloat() / 254f
+                        scope.launch(Dispatchers.Main) {
+                            onProgress(progress)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Wait loop for sweep termination or matching find events
+        while (finishedCount < 254 && locatedIp == null) {
+            delay(50)
+        }
+
+        // Shut down lingering sweep tasks immediately to preserve battery
+        jobs.forEach { it.cancel() }
+
+        withContext(Dispatchers.Main) {
+            val ipResult = locatedIp
+            if (ipResult != null) {
+                onFound(ipResult)
+                onFinished(true)
+            } else {
+                onFinished(false)
             }
         }
     }
