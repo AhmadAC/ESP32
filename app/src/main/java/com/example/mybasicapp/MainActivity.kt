@@ -65,12 +65,10 @@ import java.net.HttpURLConnection
 import java.net.Socket
 import java.net.URL
 
-// Exact colors matching your ESP32 web server CSS
 val BgColor = Color(0xFF0F172A)
 val CardColor = Color(0xFF1E293B)
 val TextColor = Color(0xFFF1F5F9)
 val PrimaryColor = Color(0xFF0EA5E9)
-
 val BtnGreen = Color(0xFF10B981)
 val BtnRed = Color(0xFFEF4444)
 val BtnBlue = Color(0xFF3B82F6)
@@ -79,14 +77,12 @@ val BtnOrange = Color(0xFFF59E0B)
 val BtnGray = Color(0xFF475569)
 
 class MainActivity : ComponentActivity() {
-
     private var hasNotificationPermission by mutableStateOf(false)
     private var hasAudioPermission by mutableStateOf(false)
     private var hasLocationPermission by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         createNotificationChannel()
 
         val requestPermissionLauncher = registerForActivityResult(
@@ -97,42 +93,18 @@ class MainActivity : ComponentActivity() {
             hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: hasLocationPermission
         }
 
-        val permissionsToRequest = mutableListOf<String>()
-
+        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.ACCESS_FINE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                hasNotificationPermission = true
-            }
-        } else {
-            hasNotificationPermission = true
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-        } else {
-            hasAudioPermission = true
-        }
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        } else {
-            hasLocationPermission = true
-        }
-
-        if (permissionsToRequest.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-        }
+        requestPermissionLauncher.launch(permissions.toTypedArray())
 
         setContent {
             MainScreen(
                 hasAudioPermission = hasAudioPermission,
                 hasLocationPermission = hasLocationPermission,
-                onTriggerNotification = { message ->
-                    if (hasNotificationPermission) {
-                        sendNotification("ESP32 Sensor Alert", message)
-                    }
+                onTriggerNotification = { msg ->
+                    if (hasNotificationPermission) sendNotification("ESP32 Sensor Alert", msg)
                 }
             )
         }
@@ -143,8 +115,8 @@ class MainActivity : ComponentActivity() {
             val channel = NotificationChannel("SENSOR_CHANNEL", "Sensor Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Notifications for ESP32 Ultrasonic Sensor"
             }
-            val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
         }
     }
 
@@ -157,11 +129,7 @@ class MainActivity : ComponentActivity() {
             .setAutoCancel(true)
 
         with(NotificationManagerCompat.from(this)) {
-            try {
-                notify(System.currentTimeMillis().toInt(), builder.build())
-            } catch (e: SecurityException) {
-                e.printStackTrace()
-            }
+            try { notify(System.currentTimeMillis().toInt(), builder.build()) } catch (e: SecurityException) {}
         }
     }
 }
@@ -173,7 +141,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
-    // Live ESP32 State variables
     var isPolling by remember { mutableStateOf(false) }
     var isOnline by remember { mutableStateOf(false) }
     var sensorEnabled by remember { mutableStateOf(false) }
@@ -186,11 +153,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var audioVolume by remember { mutableStateOf(50f) }
     var lastLockState by remember { mutableStateOf(false) }
     
-    // IP Subnet Scanning status variables
     var isScanningSubnet by remember { mutableStateOf(false) }
     var subnetProgress by remember { mutableStateOf(0f) }
 
-    // Motor Variables
     var syncEnabled by remember { mutableStateOf(false) }
     var llAngle by remember { mutableStateOf(90f) }
     var hlAngle by remember { mutableStateOf(90f) }
@@ -198,14 +163,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var hrAngle by remember { mutableStateOf(90f) }
     var activeDrag by remember { mutableStateOf<String?>(null) }
     var pendingServoPayload by remember { mutableStateOf<JSONObject?>(null) }
-    
-    // Notification Toggle State
     var notifyOnTrip by remember { mutableStateOf(true) }
 
-    // Servo network throttler (prevents flooding the ESP32 while dragging sliders)
     LaunchedEffect(pendingServoPayload) {
         pendingServoPayload?.let {
-            delay(40) // 40ms debounce
+            delay(40)
             try {
                 val url = URL("http://$ipAddress/servo")
                 withContext(Dispatchers.IO) {
@@ -217,11 +179,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     conn.responseCode
                     conn.disconnect()
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {}
         }
     }
 
-    // Polling Loop for updating states & checking if we need to throw a native notification
     LaunchedEffect(isPolling, ipAddress) {
         if (isPolling) {
             while (true) {
@@ -233,8 +194,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         connection.connectTimeout = 2000
                         connection.readTimeout = 2000
                         
-                        val responseCode = connection.responseCode
-                        if (responseCode == 200) {
+                        if (connection.responseCode == 200) {
                             val response = connection.inputStream.bufferedReader().use { it.readText() }
                             val json = JSONObject(response)
                             
@@ -258,9 +218,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                 if (activeDrag != "hr" && json.has("high_right")) hrAngle = json.getJSONObject("high_right").optDouble("angle", 90.0).toFloat()
 
                                 if (safetyLock && !lastLockState) {
-                                    if (notifyOnTrip) {
-                                        onTriggerNotification("Obstacle Detected! Distance: ${sensorDistance}cm")
-                                    }
+                                    if (notifyOnTrip) onTriggerNotification("Obstacle Detected! Distance: ${sensorDistance}cm")
                                 }
                                 lastLockState = safetyLock
                             }
@@ -272,7 +230,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) { isOnline = false }
                 }
-                delay(800) // Poll interval
+                delay(800)
             }
         } else {
             isOnline = false
@@ -290,7 +248,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
                 conn.responseCode 
                 conn.disconnect()
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {}
         }
     }
     
@@ -302,7 +260,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 conn.requestMethod = "GET"
                 conn.responseCode
                 conn.disconnect()
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {}
         }
     }
 
@@ -310,7 +268,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val tabs = listOf("Wi-Fi Setup", "Robot & Audio", "Claw", "Camera")
 
     Column(modifier = Modifier.fillMaxSize().background(BgColor)) {
-        // IP Address & Connection Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -320,16 +277,13 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 onValueChange = { ipAddress = it },
                 label = { Text("ESP32 IP", color = PrimaryColor) },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryColor,
-                    unfocusedBorderColor = BtnGray,
-                    focusedTextColor = TextColor,
-                    unfocusedTextColor = TextColor
+                    focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                    focusedTextColor = TextColor, unfocusedTextColor = TextColor
                 ),
                 modifier = Modifier.weight(1f)
             )
             Spacer(modifier = Modifier.width(8.dp))
             
-            // Auto-Find Subnet Scanner Button
             HtmlButton(
                 text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Auto-Find",
                 color = if (isScanningSubnet) BtnOrange else BtnPurple,
@@ -343,14 +297,12 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         onProgress = { progress -> subnetProgress = progress },
                         onFound = { foundIp ->
                             ipAddress = foundIp
-                            isPolling = true // Trigger connection once located
+                            isPolling = true
                             Toast.makeText(context, "ESP Found at $foundIp!", Toast.LENGTH_SHORT).show()
                         },
                         onFinished = { success ->
                             isScanningSubnet = false
-                            if (!success) {
-                                Toast.makeText(context, "Could not locate ESP Robot. Check Wi-Fi connection.", Toast.LENGTH_LONG).show()
-                            }
+                            if (!success) Toast.makeText(context, "Could not locate ESP Robot.", Toast.LENGTH_LONG).show()
                         }
                     )
                 }
@@ -365,28 +317,16 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             }
         }
 
-        // Live Feed Indicator and Feedback Banner
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 15.dp, vertical = 5.dp)
-                .background(
-                    if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03),
-                    RoundedCornerShape(10.dp)
-                )
-                .border(
-                    width = 1.dp,
-                    color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                .background(if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03), RoundedCornerShape(10.dp))
+                .border(width = 1.dp, color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B), shape = RoundedCornerShape(10.dp))
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape)
-            )
+            Box(modifier = Modifier.size(10.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = if (isOnline) "Connected to ESP Robot [Online]" else "Searching for ESP Robot [Offline]",
@@ -396,7 +336,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             )
         }
 
-        // Swipeable Tabs
         TabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = CardColor,
@@ -407,7 +346,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                    text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                 )
             }
         }
@@ -487,27 +426,15 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     }
 }
 
-// Retrieves local subnet configurations to generate a search scope
 fun getLocalWifiSubnetPrefix(context: Context): String? {
     return try {
-        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val dhcpInfo = wifiManager.dhcpInfo ?: return null
-        val ipAddress = dhcpInfo.ipAddress
-        if (ipAddress == 0) return null
-        
-        // Maps octets dynamically
-        String.format(
-            "%d.%d.%d.",
-            ipAddress & 0xff,
-            (ipAddress shr 8) & 0xff,
-            (ipAddress shr 16) & 0xff
-        )
-    } catch (e: Exception) {
-        null
-    }
+        val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val dhcp = wm.dhcpInfo ?: return null
+        val ip = dhcp.ipAddress
+        if (ip == 0) null else "${ip & 0xFF}.${(ip shr 8) & 0xFF}.${(ip shr 16) & 0xFF}."
+    } catch (e: Exception) { null }
 }
 
-// Scans local IP subnet asynchronously across 254 endpoints using bounded coroutine pools
 fun discoverEspRobotOnSubnet(
     context: Context,
     scope: CoroutineScope,
@@ -515,69 +442,44 @@ fun discoverEspRobotOnSubnet(
     onFound: (String) -> Unit,
     onFinished: (Boolean) -> Unit
 ) {
-    val prefix = getLocalWifiSubnetPrefix(context)
-    if (prefix == null) {
-        onFinished(false)
-        return
-    }
-
+    val prefix = getLocalWifiSubnetPrefix(context) ?: return onFinished(false)
     scope.launch(Dispatchers.IO) {
-        val concurrencyLimit = Semaphore(40) // Prevents exhausting socket system descriptors
+        val sem = Semaphore(40)
         var locatedIp: String? = null
-        var finishedCount = 0
+        var completed = 0
 
         val jobs = (1..254).map { host ->
             launch {
-                concurrencyLimit.withPermit {
+                sem.withPermit {
                     if (locatedIp != null) return@launch
                     val targetIp = "$prefix$host"
-
                     var isFound = false
-                    // Sweeps key endpoints representing both Robot and Claw firmware configurations
                     for (endpoint in listOf("/angles", "/status")) {
                         if (locatedIp != null) break
                         try {
-                            val url = URL("http://$targetIp$endpoint")
-                            val conn = url.openConnection() as HttpURLConnection
-                            conn.connectTimeout = 450 // Low timeout for rapid connection skips
+                            val conn = URL("http://$targetIp$endpoint").openConnection() as HttpURLConnection
+                            conn.connectTimeout = 450
                             conn.readTimeout = 450
-                            conn.requestMethod = "GET"
-                            val code = conn.responseCode
-                            conn.disconnect()
-                            if (code == 200) {
+                            if (conn.responseCode == 200) {
                                 isFound = true
                                 break
                             }
                         } catch (e: Exception) {}
                     }
-
-                    if (isFound) {
-                        locatedIp = targetIp
-                    }
-
+                    if (isFound) locatedIp = targetIp
                     synchronized(this) {
-                        finishedCount++
-                        val progress = finishedCount.toFloat() / 254f
-                        scope.launch(Dispatchers.Main) {
-                            onProgress(progress)
-                        }
+                        completed++
+                        scope.launch(Dispatchers.Main) { onProgress(completed.toFloat() / 254f) }
                     }
                 }
             }
         }
-
-        // Wait loop for sweep termination or matching find events
-        while (finishedCount < 254 && locatedIp == null) {
-            delay(50)
-        }
-
-        // Shut down lingering sweep tasks immediately to preserve battery
+        while (completed < 254 && locatedIp == null) { delay(50) }
         jobs.forEach { it.cancel() }
-
         withContext(Dispatchers.Main) {
-            val ipResult = locatedIp
-            if (ipResult != null) {
-                onFound(ipResult)
+            val result = locatedIp
+            if (result != null) {
+                onFound(result)
                 onFinished(true)
             } else {
                 onFinished(false)
@@ -601,23 +503,16 @@ fun WifiTab(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Retreives both Robot scanned networks AND Phone local antenna scanned networks
     fun getPhoneLocalWifiNetworks(context: Context): List<String> {
         return try {
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                wifiManager.scanResults.mapNotNull { it.SSID }.filter { it.isNotEmpty() }.distinct()
-            } else {
-                emptyList()
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
+                wm.scanResults.mapNotNull { it.SSID }.filter { it.isNotEmpty() }.distinct()
+            } else emptyList()
+        } catch (e: Exception) { emptyList() }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
         CardContainer(title = "Wi-Fi Provisioning") {
             HtmlButton(
                 text = if (isScanning) "Scanning..." else "Scan Wi-Fi Networks",
@@ -637,7 +532,6 @@ fun WifiTab(
                         conn.disconnect()
                     } catch (e: Exception) {}
 
-                    // Fetch local networks seen directly by the phone
                     val phoneNetworks = getPhoneLocalWifiNetworks(context)
                     val mergedList = (robotNetworks + phoneNetworks).distinct().sorted()
 
@@ -650,9 +544,7 @@ fun WifiTab(
                 }
             }
             Spacer(modifier = Modifier.height(15.dp))
-
             LabeledDropdown("Target SSID", selectedSsid, ssidList) { selectedSsid = it }
-            
             Spacer(modifier = Modifier.height(15.dp))
             OutlinedTextField(
                 value = wifiPassword,
@@ -660,14 +552,11 @@ fun WifiTab(
                 label = { Text("Wi-Fi Password", color = PrimaryColor) },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryColor,
-                    unfocusedBorderColor = BtnGray,
-                    focusedTextColor = TextColor,
-                    unfocusedTextColor = TextColor
+                    focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                    focusedTextColor = TextColor, unfocusedTextColor = TextColor
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
-            
             Spacer(modifier = Modifier.height(15.dp))
             HtmlButton("Save and Connect", BtnGreen, Modifier.fillMaxWidth()) {
                 if (selectedSsid.isEmpty()) {
@@ -678,9 +567,7 @@ fun WifiTab(
                 }
             }
         }
-        
         Spacer(modifier = Modifier.height(20.dp))
-        
         CardContainer(title = "Quick Boot Mode Switch") {
             Row(modifier = Modifier.fillMaxWidth()) {
                 HtmlButton("Force AP Mode", BtnOrange, Modifier.weight(1f).padding(end = 4.dp)) { 
@@ -741,24 +628,20 @@ fun RobotTab(
                 socketHolder = socket
                 val outStream = socket.getOutputStream()
                 val bufferSize = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                
                 if (ActivityCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    val audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
-                    audioRecordHolder = audioRecord
-                    audioRecord.startRecording()
-                    
+                    val record = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
+                    audioRecordHolder = record
+                    record.startRecording()
                     val buffer = ByteArray(bufferSize)
                     while (isStreamingMic) {
-                        val read = audioRecord.read(buffer, 0, buffer.size)
-                        if (read > 0) {
-                            outStream.write(buffer, 0, read)
-                        }
+                        val read = record.read(buffer, 0, buffer.size)
+                        if (read > 0) outStream.write(buffer, 0, read)
                     }
-                    audioRecord.stop()
-                    audioRecord.release()
+                    record.stop()
+                    record.release()
                 }
                 socket.close()
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {}
         }.start()
     }
 
@@ -768,15 +651,10 @@ fun RobotTab(
         try { audioRecordHolder?.release() } catch (e: Exception) {}
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
         if (safetyLock) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF7F1D1D), RoundedCornerShape(10.dp))
-                    .padding(12.dp),
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF7F1D1D), RoundedCornerShape(10.dp)).padding(12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text("WARNING: MOTORS LOCKED - Obstacle Detected!", color = Color(0xFFFCA5A5), fontWeight = FontWeight.Bold)
@@ -784,9 +662,6 @@ fun RobotTab(
             Spacer(modifier = Modifier.height(15.dp))
         }
 
-        // ==========================================
-        // AUDIO & SPEAKER OUTPUT CARD
-        // ==========================================
         CardContainer(title = "Audio & Speaker Output") {
             var localVolume by remember { mutableStateOf(audioVolume) }
             LaunchedEffect(audioVolume) { localVolume = audioVolume }
@@ -815,7 +690,6 @@ fun RobotTab(
             }
             Spacer(modifier = Modifier.height(10.dp))
             
-            // WALKIE-TALKIE NATIVE TOUCH IMPLEMENTATION
             val interactionSource = Modifier.pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -833,26 +707,17 @@ fun RobotTab(
             ) {
                 Text(if (isStreamingMic) "Live Transmitting..." else "Hold to Speak (Walkie Talkie)", color = Color.White, fontWeight = FontWeight.Bold)
             }
-            
             Spacer(modifier = Modifier.height(15.dp))
-            
-            // Listen to Robot Mic Composable (using a robust DisposableEffect clean stop mechanism)
             AudioStreamPlayer(ipAddress = ipAddress, active = listenMicActive)
-
             HtmlButton(
                 text = if (listenMicActive) "Stop Listening to Robot" else "Listen to Robot Mic",
                 color = if (listenMicActive) BtnRed else BtnBlue,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-            ) {
-                listenMicActive = !listenMicActive
-            }
+            ) { listenMicActive = !listenMicActive }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==========================================
-        // HYPERSONIC SENSOR CARD
-        // ==========================================
         CardContainer(title = "Hypersonic Sensor Settings") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 HtmlButton(
@@ -905,11 +770,8 @@ fun RobotTab(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==========================================
-        // ROBOT MOVEMENT CARD
-        // ==========================================
         CardContainer(title = "Robot Movement") {
-            val buttons: List<Pair<String, Color>> = listOf(
+            val buttons = listOf(
                 "forward" to BtnBlue, "backward" to BtnBlue,
                 "step_forward" to BtnBlue, "step_backward" to BtnBlue,
                 "leap_forward" to BtnBlue, "crawl" to BtnOrange,
@@ -932,9 +794,6 @@ fun RobotTab(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==========================================
-        // MANUAL JOINT CONTROL CARD
-        // ==========================================
         CardContainer(title = "Manual Joint Control") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Sync Legs", color = TextColor, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
@@ -954,7 +813,6 @@ fun RobotTab(
     }
 }
 
-// Separate Composable wrapper implementing dynamic closure of resources to immediately stop audio stream
 @Composable
 fun AudioStreamPlayer(ipAddress: String, active: Boolean) {
     if (active) {
@@ -977,10 +835,7 @@ fun AudioStreamPlayer(ipAddress: String, active: Boolean) {
             }
         }
 
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxWidth().height(50.dp)
-        )
+        AndroidView(factory = { webView }, modifier = Modifier.fillMaxWidth().height(50.dp))
     }
 }
 
@@ -1011,9 +866,7 @@ fun ClawTab(
     onClawCommand: (String) -> Unit,
     onClawAngle: (Int) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
         CardContainer(title = "Claw Controls") {
             Row(modifier = Modifier.fillMaxWidth()) {
                 HtmlButton("Open (180)", BtnGreen, Modifier.weight(1f).padding(4.dp)) { onClawCommand("open") }
@@ -1032,10 +885,7 @@ fun ClawTab(
                 onValueChange = { sliderValue = it },
                 onValueChangeFinished = { onClawAngle(sliderValue.toInt()) },
                 valueRange = 0f..180f,
-                colors = SliderDefaults.colors(
-                    thumbColor = PrimaryColor,
-                    activeTrackColor = PrimaryColor
-                )
+                colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
             )
         }
     }
@@ -1048,9 +898,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
         CardContainer(title = "Live Camera Stream") {
             HtmlButton(
                 text = if (camActive) "Turn Camera OFF" else "Turn Camera ON",
@@ -1063,10 +911,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(15.dp))
 
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-                    .background(Color.Black, RoundedCornerShape(8.dp)),
+                modifier = Modifier.fillMaxWidth().height(300.dp).background(Color.Black, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
@@ -1082,7 +927,6 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                         },
                         update = { view ->
                             val currentUrl = view.url ?: ""
-                            
                             if (!currentUrl.startsWith("data:text/html")) {
                                 val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://$ipAddress:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
                                 view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
@@ -1108,15 +952,12 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             }
             Spacer(modifier = Modifier.height(10.dp))
             HtmlButton("Save HD Picture", BtnGreen, Modifier.fillMaxWidth()) {
-                coroutineScope.launch {
-                    saveImageToGallery(context, ipAddress, camRotation)
-                }
+                coroutineScope.launch { saveImageToGallery(context, ipAddress, camRotation) }
             }
         }
     }
 }
 
-// Helper to fetch the HD snapshot, rotate it, and save directly to phone MediaStore
 suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
     withContext(Dispatchers.IO) {
         try {
@@ -1128,7 +969,6 @@ suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: I
             
             if (conn.responseCode == 200) {
                 val bitmap = BitmapFactory.decodeStream(conn.inputStream)
-                
                 val finalBitmap = if (rotationZ % 360 != 0) {
                     val matrix = Matrix().apply { postRotate(rotationZ.toFloat()) }
                     Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
@@ -1146,30 +986,21 @@ suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: I
                 val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
                 uri?.let {
                     context.contentResolver.openOutputStream(it).use { out ->
-                        if (out != null) {
-                            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
-                        }
+                        if (out != null) finalBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
                     }
                 }
                 
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Image saved to Gallery!", Toast.LENGTH_SHORT).show()
-                }
+                withContext(Dispatchers.Main) { Toast.makeText(context, "Image saved to Gallery!", Toast.LENGTH_SHORT).show() }
             } else {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Failed to capture image.", Toast.LENGTH_SHORT).show()
-                }
+                withContext(Dispatchers.Main) { Toast.makeText(context, "Failed to capture image.", Toast.LENGTH_SHORT).show() }
             }
             conn.disconnect()
         } catch (e: Exception) {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Network Error. Image not saved.", Toast.LENGTH_SHORT).show()
-            }
+            withContext(Dispatchers.Main) { Toast.makeText(context, "Network Error. Image not saved.", Toast.LENGTH_SHORT).show() }
         }
     }
 }
 
-// Reusable Component for Dropdowns
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LabeledDropdown(
@@ -1191,10 +1022,8 @@ fun LabeledDropdown(
             label = { Text(label, color = PrimaryColor) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                focusedTextColor = TextColor,
-                unfocusedTextColor = TextColor,
-                focusedBorderColor = PrimaryColor,
-                unfocusedBorderColor = BtnGray
+                focusedTextColor = TextColor, unfocusedTextColor = TextColor,
+                focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray
             ),
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
