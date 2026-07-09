@@ -391,7 +391,8 @@ fun RobotTab(
         Spacer(modifier = Modifier.height(20.dp))
 
         CardContainer(title = "Robot Movement") {
-            val buttons = listOf(
+            // Explicitly defining the type avoids a compiler resolution bug
+            val buttons: List<Pair<String, Color>> = listOf(
                 "forward" to BtnBlue, "backward" to BtnBlue,
                 "step_forward" to BtnBlue, "step_backward" to BtnBlue,
                 "left_wave" to BtnPurple, "right_wave" to BtnPurple,
