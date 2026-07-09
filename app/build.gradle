@@ -43,6 +43,10 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
     
+    // Restored standard Android UI libraries required by your existing XML theme files
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    
     // Jetpack Compose BOM (Downloads the UI framework)
     def composeBom = platform('androidx.compose:compose-bom:2024.02.00')
     implementation composeBom
