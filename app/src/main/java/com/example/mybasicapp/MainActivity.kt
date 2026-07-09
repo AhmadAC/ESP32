@@ -4,13 +4,19 @@ package com.example.mybasicapp
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.os.Build
 import android.os.Bundle
-import android.view.MotionEvent
+import android.os.Environment
+import android.provider.MediaStore
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -129,6 +136,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(onTriggerNotification: (String) -> Unit) {
     var ipAddress by remember { mutableStateOf("192.168.4.1") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     // Live ESP32 State variables
     var isPolling by remember { mutableStateOf(false) }
@@ -136,10 +144,42 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
     var sensorDistance by remember { mutableStateOf(0.0) }
     var safetyLock by remember { mutableStateOf(false) }
     var trippedAction by remember { mutableStateOf("stop") }
+    var clearedAction by remember { mutableStateOf("stand") }
+    var trippedAudio by remember { mutableStateOf("none") }
+    var clearedAudio by remember { mutableStateOf("none") }
+    var audioVolume by remember { mutableStateOf(50f) }
     var lastLockState by remember { mutableStateOf(false) }
+    
+    // Motor Variables
+    var syncEnabled by remember { mutableStateOf(false) }
+    var llAngle by remember { mutableStateOf(90f) }
+    var hlAngle by remember { mutableStateOf(90f) }
+    var lrAngle by remember { mutableStateOf(90f) }
+    var hrAngle by remember { mutableStateOf(90f) }
+    var activeDrag by remember { mutableStateOf<String?>(null) }
+    var pendingServoPayload by remember { mutableStateOf<JSONObject?>(null) }
     
     // Notification Toggle State
     var notifyOnTrip by remember { mutableStateOf(true) }
+
+    // Servo network throttler (prevents flooding the ESP32 while dragging sliders)
+    LaunchedEffect(pendingServoPayload) {
+        pendingServoPayload?.let {
+            delay(40) // 40ms debounce
+            try {
+                val url = URL("http://$ipAddress/servo")
+                withContext(Dispatchers.IO) {
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
+                    conn.responseCode
+                    conn.disconnect()
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
 
     // Polling Loop for updating states & checking if we need to throw a native notification
     LaunchedEffect(isPolling, ipAddress) {
@@ -161,7 +201,22 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                                 sensorEnabled = json.optBoolean("sensor_enabled", false)
                                 safetyLock = json.optBoolean("safety_lock", false)
                                 sensorDistance = json.optDouble("sensor_distance", -1.0)
+                                trippedAction = json.optString("sensor_tripped_action", "stop")
+                                clearedAction = json.optString("sensor_cleared_action", "stand")
+                                trippedAudio = json.optString("sensor_tripped_audio", "none")
+                                clearedAudio = json.optString("sensor_cleared_audio", "none")
                                 
+                                // Only update volume if it exists
+                                if (json.has("audio_volume")) {
+                                    audioVolume = json.optDouble("audio_volume", 50.0).toFloat()
+                                }
+                                
+                                // Update Slider states if user isn't actively dragging them
+                                if (activeDrag != "ll" && json.has("low_left")) llAngle = json.getJSONObject("low_left").optDouble("angle", 90.0).toFloat()
+                                if (activeDrag != "hl" && json.has("high_left")) hlAngle = json.getJSONObject("high_left").optDouble("angle", 90.0).toFloat()
+                                if (activeDrag != "lr" && json.has("low_right")) lrAngle = json.getJSONObject("low_right").optDouble("angle", 90.0).toFloat()
+                                if (activeDrag != "hr" && json.has("high_right")) hrAngle = json.getJSONObject("high_right").optDouble("angle", 90.0).toFloat()
+
                                 // Notification Fire Logic (Fires once upon edge transition false->true)
                                 if (safetyLock && !lastLockState) {
                                     if (notifyOnTrip) {
@@ -193,9 +248,7 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                 OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
                 conn.responseCode 
                 conn.disconnect()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
     
@@ -207,9 +260,7 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                 conn.requestMethod = "GET"
                 conn.responseCode
                 conn.disconnect()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -266,33 +317,63 @@ fun MainScreen(onTriggerNotification: (String) -> Unit) {
                     sensorDistance = sensorDistance,
                     notifyOnTrip = notifyOnTrip,
                     trippedAction = trippedAction,
+                    clearedAction = clearedAction,
+                    trippedAudio = trippedAudio,
+                    clearedAudio = clearedAudio,
+                    audioVolume = audioVolume,
+                    syncEnabled = syncEnabled,
+                    llAngle = llAngle,
+                    hlAngle = hlAngle,
+                    lrAngle = lrAngle,
+                    hrAngle = hrAngle,
                     onNotifyToggle = { notifyOnTrip = it },
-                    onActionChange = { act -> 
-                        trippedAction = act
-                        val json = JSONObject().apply { put("tripped_action", act) }
-                        sendPostRequest("/sensor", json)
+                    onSyncToggle = { syncEnabled = it },
+                    onSliderChanged = { id, angle ->
+                        activeDrag = id
+                        val payload = JSONObject()
+                        when (id) {
+                            "ll" -> { llAngle = angle; payload.put("ll", angle.toInt()); if (syncEnabled) { lrAngle = angle; payload.put("lr", angle.toInt()) } }
+                            "hl" -> { hlAngle = angle; payload.put("hl", angle.toInt()); if (syncEnabled) { hrAngle = angle; payload.put("hr", angle.toInt()) } }
+                            "lr" -> { lrAngle = angle; payload.put("lr", angle.toInt()); if (syncEnabled) { llAngle = angle; payload.put("ll", angle.toInt()) } }
+                            "hr" -> { hrAngle = angle; payload.put("hr", angle.toInt()); if (syncEnabled) { hlAngle = angle; payload.put("hl", angle.toInt()) } }
+                        }
+                        pendingServoPayload = payload
                     },
-                    onToggleSensor = {
-                        val json = JSONObject().apply { put("enabled", !sensorEnabled) }
+                    onSliderChangeFinished = { activeDrag = null },
+                    onSensorConfigUpdate = { tAction, cAction, tAudio, cAudio, enabled ->
+                        val json = JSONObject().apply {
+                            put("enabled", enabled)
+                            put("tripped_action", tAction)
+                            put("cleared_action", cAction)
+                            put("tripped_audio", tAudio)
+                            put("cleared_audio", cAudio)
+                        }
                         sendPostRequest("/sensor", json)
-                        sensorEnabled = !sensorEnabled
+                        trippedAction = tAction; clearedAction = cAction; trippedAudio = tAudio; clearedAudio = cAudio; sensorEnabled = enabled
                     },
                     onRobotAction = { act ->
                         val json = JSONObject().apply { put("action", act) }
                         sendPostRequest("/action", json)
+                    },
+                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) },
+                    onWalkieTalkie = { 
+                        Toast.makeText(context, "Note: Wi-Fi audio streaming requires a C++ Firmware upgrade. Playing audio locally on Robot speaker instead.", Toast.LENGTH_LONG).show()
+                        sendPostRequest("/audio_play", JSONObject().apply { put("sound", "record_3s") })
                     }
                 )
                 1 -> ClawTab(
                     onClawCommand = { cmd -> sendGetRequest("/claw?cmd=$cmd") },
                     onClawAngle = { angle -> sendGetRequest("/claw?angle=$angle") }
                 )
-                2 -> CameraTab(ipAddress = ipAddress)
+                2 -> CameraTab(
+                    ipAddress = ipAddress,
+                    onFlipCamera = { sendPostRequest("/cam_flip", JSONObject()) }
+                )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RobotTab(
     sensorEnabled: Boolean,
@@ -300,10 +381,23 @@ fun RobotTab(
     sensorDistance: Double,
     notifyOnTrip: Boolean,
     trippedAction: String,
+    clearedAction: String,
+    trippedAudio: String,
+    clearedAudio: String,
+    audioVolume: Float,
+    syncEnabled: Boolean,
+    llAngle: Float,
+    hlAngle: Float,
+    lrAngle: Float,
+    hrAngle: Float,
     onNotifyToggle: (Boolean) -> Unit,
-    onActionChange: (String) -> Unit,
-    onToggleSensor: () -> Unit,
-    onRobotAction: (String) -> Unit
+    onSyncToggle: (Boolean) -> Unit,
+    onSliderChanged: (String, Float) -> Unit,
+    onSliderChangeFinished: () -> Unit,
+    onSensorConfigUpdate: (String, String, String, String, Boolean) -> Unit,
+    onRobotAction: (String) -> Unit,
+    onAudioCommand: (String, JSONObject) -> Unit,
+    onWalkieTalkie: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
@@ -321,6 +415,9 @@ fun RobotTab(
             Spacer(modifier = Modifier.height(15.dp))
         }
 
+        // ==========================================
+        // HYPERSONIC SENSOR CARD
+        // ==========================================
         CardContainer(title = "Hypersonic Sensor Settings") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 HtmlButton(
@@ -328,7 +425,7 @@ fun RobotTab(
                     color = if (sensorEnabled) BtnRed else BtnGreen,
                     modifier = Modifier.weight(1f)
                 ) {
-                    onToggleSensor()
+                    onSensorConfigUpdate(trippedAction, clearedAction, trippedAudio, clearedAudio, !sensorEnabled)
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
@@ -340,40 +437,26 @@ fun RobotTab(
             }
             Spacer(modifier = Modifier.height(15.dp))
             
-            var expanded by remember { mutableStateOf(false) }
-            val actions = listOf("stop", "forward", "backward", "sit", "stand", "none")
+            val physicalActions = listOf("stop", "forward", "backward", "step_forward", "step_backward", "leap_forward", "left_wave", "right_wave", "back_left_wave", "back_right_wave", "crawl", "sit", "stand", "stretch_down", "stretch_back", "none")
+            val audioActions = listOf("none", "dog_bark")
 
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
-            ) {
-                OutlinedTextField(
-                    value = trippedAction.uppercase(),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Action When Tripped", color = PrimaryColor) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                        focusedTextColor = TextColor,
-                        unfocusedTextColor = TextColor
-                    ),
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.background(CardColor)
-                ) {
-                    actions.forEach { act ->
-                        DropdownMenuItem(
-                            text = { Text(act.uppercase(), color = TextColor) },
-                            onClick = {
-                                onActionChange(act)
-                                expanded = false
-                            }
-                        )
-                    }
-                }
+            LabeledDropdown("Action When Tripped", trippedAction, physicalActions) { 
+                onSensorConfigUpdate(it, clearedAction, trippedAudio, clearedAudio, sensorEnabled) 
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            LabeledDropdown("Action When Cleared", clearedAction, physicalActions) { 
+                onSensorConfigUpdate(trippedAction, it, trippedAudio, clearedAudio, sensorEnabled) 
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            LabeledDropdown("Audio Sound When Tripped", trippedAudio, audioActions) { 
+                onSensorConfigUpdate(trippedAction, clearedAction, it, clearedAudio, sensorEnabled) 
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            LabeledDropdown("Audio Sound When Cleared", clearedAudio, audioActions) { 
+                onSensorConfigUpdate(trippedAction, clearedAction, trippedAudio, it, sensorEnabled) 
             }
 
             Spacer(modifier = Modifier.height(15.dp))
@@ -390,15 +473,64 @@ fun RobotTab(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // ==========================================
+        // AUDIO & SPEAKER OUTPUT CARD
+        // ==========================================
+        CardContainer(title = "Audio & Speaker Output") {
+            var localVolume by remember { mutableStateOf(audioVolume) }
+            
+            // Sync local slider with ESP32 reported volume
+            LaunchedEffect(audioVolume) { localVolume = audioVolume }
+
+            Text("Volume Control: ${localVolume.toInt()}%", color = TextColor)
+            Slider(
+                value = localVolume,
+                onValueChange = { localVolume = it },
+                onValueChangeFinished = { 
+                    val json = JSONObject().apply { put("volume", localVolume.toInt()) }
+                    onAudioCommand("/audio_config", json)
+                },
+                valueRange = 0f..100f,
+                colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
+            )
+
+            Spacer(modifier = Modifier.height(15.dp))
+
+            var selectedTestSound by remember { mutableStateOf("dog_bark") }
+            LabeledDropdown("Test Digital Audio Stream", selectedTestSound, listOf("dog_bark")) { selectedTestSound = it }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HtmlButton("Play", Color(0xFF14B8A6), Modifier.weight(1f).padding(end = 4.dp)) { 
+                    onAudioCommand("/audio_play", JSONObject().apply { put("sound", selectedTestSound) })
+                }
+                HtmlButton("Stop Sound", BtnRed, Modifier.weight(1f).padding(start = 4.dp)) { 
+                    onAudioCommand("/audio_stop", JSONObject())
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            HtmlButton("Listen to Robot (Hold/Mic)", BtnPurple, Modifier.fillMaxWidth()) {
+                onWalkieTalkie()
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ==========================================
+        // ROBOT MOVEMENT CARD
+        // ==========================================
         CardContainer(title = "Robot Movement") {
             // Explicitly defining the type avoids a compiler resolution bug
             val buttons: List<Pair<String, Color>> = listOf(
                 "forward" to BtnBlue, "backward" to BtnBlue,
                 "step_forward" to BtnBlue, "step_backward" to BtnBlue,
+                "leap_forward" to BtnBlue, "crawl" to BtnOrange,
                 "left_wave" to BtnPurple, "right_wave" to BtnPurple,
+                "back_left_wave" to BtnPurple, "back_right_wave" to BtnPurple,
                 "sit" to BtnOrange, "stand" to BtnOrange,
                 "stretch_down" to BtnPurple, "stretch_back" to BtnPurple,
-                "crawl" to BtnOrange, "stop" to BtnRed
+                "stop" to BtnRed
             )
             
             buttons.chunked(2).forEach { row ->
@@ -418,6 +550,50 @@ fun RobotTab(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ==========================================
+        // MANUAL JOINT CONTROL CARD
+        // ==========================================
+        CardContainer(title = "Manual Joint Control") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Sync Legs", color = TextColor, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                Switch(
+                    checked = syncEnabled,
+                    onCheckedChange = { onSyncToggle(it) },
+                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryColor, checkedTrackColor = Color(0xFF334155))
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            MotorSlider("Low Left Leg (IO12)", llAngle, { onSliderChanged("ll", it) }, onSliderChangeFinished)
+            MotorSlider("High Left Shoulder (IO11)", hlAngle, { onSliderChanged("hl", it) }, onSliderChangeFinished)
+            MotorSlider("Low Right Leg (IO9)", lrAngle, { onSliderChanged("lr", it) }, onSliderChangeFinished)
+            MotorSlider("High Right Shoulder (IO10)", hrAngle, { onSliderChanged("hr", it) }, onSliderChangeFinished)
+        }
+    }
+}
+
+@Composable
+fun MotorSlider(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit
+) {
+    Column(modifier = Modifier.padding(vertical = 5.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = TextColor, fontSize = 14.sp)
+            Text("${value.toInt()}°", color = PrimaryColor, fontWeight = FontWeight.Bold)
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = 0f..180f,
+            colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
+        )
     }
 }
 
@@ -457,11 +633,14 @@ fun ClawTab(
 }
 
 @Composable
-fun CameraTab(ipAddress: String) {
+fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     var camActive by remember { mutableStateOf(false) }
+    var camRotation by remember { mutableStateOf(0) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(15.dp)
+        modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
     ) {
         CardContainer(title = "Live Camera Stream") {
             HtmlButton(
@@ -474,42 +653,158 @@ fun CameraTab(ipAddress: String) {
 
             Spacer(modifier = Modifier.height(15.dp))
 
-            if (camActive) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .background(Color.Black, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .background(Color.Black, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (camActive) {
                     AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
+                        factory = { ctx ->
+                            WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
+                                setBackgroundColor(android.graphics.Color.BLACK)
                                 // Ignore touch interactions to ensure the user can still swipe the tab layout
                                 setOnTouchListener { _, _ -> false } 
-                                webViewClient = WebViewClient()
-                                loadUrl("http://$ipAddress:81/")
                             }
                         },
                         update = { view ->
-                            view.loadUrl("http://$ipAddress:81/")
+                            val currentUrl = view.url ?: ""
+                            
+                            // Load custom HTML wrapper to force black background and support JS rotation
+                            if (!currentUrl.startsWith("data:text/html")) {
+                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://$ipAddress:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
+                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                            }
+                            // Apply rotation natively via Javascript so it doesn't drop the MJPEG connection
+                            view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg)';", null)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .background(Color.Black, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
+                } else {
                     Text("Camera is OFF", color = BtnGray)
                 }
+            }
+
+            Spacer(modifier = Modifier.height(15.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HtmlButton("Rotate 90°", BtnOrange, Modifier.weight(1f).padding(end = 4.dp)) { 
+                    camRotation = (camRotation + 90) % 360 
+                }
+                HtmlButton("Flip Camera", BtnPurple, Modifier.weight(1f).padding(start = 4.dp)) { 
+                    onFlipCamera() 
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            HtmlButton("Save HD Picture", BtnGreen, Modifier.fillMaxWidth()) {
+                coroutineScope.launch {
+                    saveImageToGallery(context, ipAddress, camRotation)
+                }
+            }
+        }
+    }
+}
+
+// Helper to fetch the HD snapshot, rotate it, and save directly to phone MediaStore
+suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
+    withContext(Dispatchers.IO) {
+        try {
+            val url = URL("http://$ipAddress/capture")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            
+            if (conn.responseCode == 200) {
+                val bitmap = BitmapFactory.decodeStream(conn.inputStream)
+                
+                val finalBitmap = if (rotationZ % 360 != 0) {
+                    val matrix = Matrix().apply { postRotate(rotationZ.toFloat()) }
+                    Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                } else bitmap
+
+                val filename = "ESP32_Capture_${System.currentTimeMillis()}.jpg"
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                    }
+                }
+                
+                val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                uri?.let {
+                    context.contentResolver.openOutputStream(it).use { out ->
+                        if (out != null) {
+                            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+                        }
+                    }
+                }
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Image saved to Gallery!", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Failed to capture image.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Network Error. Image not saved.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+}
+
+// Reusable Component for Dropdowns
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LabeledDropdown(
+    label: String,
+    selectedValue: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedValue.uppercase().replace("_", " "),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label, color = PrimaryColor) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                focusedTextColor = TextColor,
+                unfocusedTextColor = TextColor,
+                focusedBorderColor = PrimaryColor,
+                unfocusedBorderColor = BtnGray
+            ),
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(CardColor)
+        ) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(opt.uppercase().replace("_", " "), color = TextColor) },
+                    onClick = {
+                        onValueChange(opt)
+                        expanded = false
+                    }
+                )
             }
         }
     }
