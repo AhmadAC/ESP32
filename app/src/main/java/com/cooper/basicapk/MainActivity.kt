@@ -1,5 +1,5 @@
-// app/src/main/java/com/cooper/basicapk/MainActivity.kt
-package com.cooper.basicapk
+// app/src/main/java/com/example/mybasicapp/MainActivity.kt
+package com.example.mybasicapp
 
 import android.Manifest
 import android.app.NotificationChannel

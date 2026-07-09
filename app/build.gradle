@@ -5,11 +5,12 @@ plugins {
 }
 
 android {
-    namespace 'com.cooper.basicapk'
+    // Restored to match your existing Java files
+    namespace 'com.example.mybasicapp'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.cooper.basicapk"
+        applicationId "com.example.mybasicapp"
         minSdk 26
         targetSdk 34
         versionCode 1
@@ -33,7 +34,6 @@ android {
         compose true
     }
     composeOptions {
-        // Version 1.5.4 explicitly supports Kotlin 1.9.20
         kotlinCompilerExtensionVersion '1.5.4'
     }
 }
@@ -43,11 +43,12 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
     
-    // Restored standard Android UI libraries required by your existing XML theme files
+    // Restored standard Android UI libraries & OkHttp required by your existing Java fragments/services
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     
-    // Jetpack Compose BOM (Downloads the UI framework)
+    // Jetpack Compose BOM
     def composeBom = platform('androidx.compose:compose-bom:2024.02.00')
     implementation composeBom
     androidTestImplementation composeBom

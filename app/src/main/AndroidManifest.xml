@@ -13,8 +13,9 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.NoTitleBar"
         android:usesCleartextTraffic="true">
+        
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.mybasicapp.MainActivity"
             android:exported="true"
             android:theme="@android:style/Theme.NoTitleBar">
             <intent-filter>
@@ -22,5 +23,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Keeping your existing polling service registered so it doesn't crash -->
+        <service android:name=".HttpPollingService" android:exported="false" />
+        
     </application>
 </manifest>
