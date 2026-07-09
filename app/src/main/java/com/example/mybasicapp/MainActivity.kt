@@ -13,6 +13,7 @@ import android.graphics.Matrix
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -26,11 +27,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -76,6 +79,7 @@ class MainActivity : ComponentActivity() {
 
     private var hasNotificationPermission by mutableStateOf(false)
     private var hasAudioPermission by mutableStateOf(false)
+    private var hasLocationPermission by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +91,7 @@ class MainActivity : ComponentActivity() {
         ) { permissions ->
             hasNotificationPermission = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: hasNotificationPermission
             hasAudioPermission = permissions[Manifest.permission.RECORD_AUDIO] ?: hasAudioPermission
+            hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: hasLocationPermission
         }
 
         val permissionsToRequest = mutableListOf<String>()
@@ -107,6 +112,12 @@ class MainActivity : ComponentActivity() {
             hasAudioPermission = true
         }
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        } else {
+            hasLocationPermission = true
+        }
+
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
@@ -114,6 +125,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainScreen(
                 hasAudioPermission = hasAudioPermission,
+                hasLocationPermission = hasLocationPermission,
                 onTriggerNotification = { message ->
                     if (hasNotificationPermission) {
                         sendNotification("ESP32 Sensor Alert", message)
@@ -153,13 +165,14 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> Unit) {
+fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTriggerNotification: (String) -> Unit) {
     var ipAddress by remember { mutableStateOf("192.168.4.1") }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
     // Live ESP32 State variables
     var isPolling by remember { mutableStateOf(false) }
+    var isOnline by remember { mutableStateOf(false) }
     var sensorEnabled by remember { mutableStateOf(false) }
     var sensorDistance by remember { mutableStateOf(0.0) }
     var safetyLock by remember { mutableStateOf(false) }
@@ -213,11 +226,13 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
                         connection.connectTimeout = 2000
                         connection.readTimeout = 2000
                         
-                        if (connection.responseCode == 200) {
+                        val responseCode = connection.responseCode
+                        if (responseCode == 200) {
                             val response = connection.inputStream.bufferedReader().use { it.readText() }
                             val json = JSONObject(response)
                             
                             withContext(Dispatchers.Main) {
+                                isOnline = true
                                 sensorEnabled = json.optBoolean("sensor_enabled", false)
                                 safetyLock = json.optBoolean("safety_lock", false)
                                 sensorDistance = json.optDouble("sensor_distance", -1.0)
@@ -242,12 +257,18 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
                                 }
                                 lastLockState = safetyLock
                             }
+                        } else {
+                            withContext(Dispatchers.Main) { isOnline = false }
                         }
                         connection.disconnect()
                     }
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { isOnline = false }
+                }
                 delay(800) // Poll interval
             }
+        } else {
+            isOnline = false
         }
     }
 
@@ -284,7 +305,7 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
     Column(modifier = Modifier.fillMaxSize().background(BgColor)) {
         // IP Address & Connection Header
         Row(
-            modifier = Modifier.fillMaxWidth().padding(15.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -308,6 +329,37 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
             }
         }
 
+        // Live Feed Indicator and Feedback Banner
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 15.dp, vertical = 5.dp)
+                .background(
+                    if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03),
+                    RoundedCornerShape(10.dp)
+                )
+                .border(
+                    width = 1.dp,
+                    color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (isOnline) "Connected to ESP Robot [Online]" else "Searching for ESP Robot [Offline]",
+                color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+        }
+
         // Swipeable Tabs
         TabRow(
             selectedTabIndex = pagerState.currentPage,
@@ -328,6 +380,7 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
             when (page) {
                 0 -> WifiTab(
                     ipAddress = ipAddress,
+                    hasLocationPermission = hasLocationPermission,
                     onSaveWifi = { ssid, pass -> 
                         sendPostRequest("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
                     },
@@ -380,7 +433,10 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
                         val json = JSONObject().apply { put("action", act) }
                         sendPostRequest("/action", json)
                     },
-                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) }
+                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) },
+                    onWalkieTalkie = {
+                        Toast.makeText(context, "Mic Transmitting to Robot...", Toast.LENGTH_SHORT).show()
+                    }
                 )
                 2 -> ClawTab(
                     onClawCommand = { cmd -> sendGetRequest("/claw?cmd=$cmd") },
@@ -398,6 +454,7 @@ fun MainScreen(hasAudioPermission: Boolean, onTriggerNotification: (String) -> U
 @Composable
 fun WifiTab(
     ipAddress: String,
+    hasLocationPermission: Boolean,
     onSaveWifi: (String, String) -> Unit,
     onForceAp: () -> Unit,
     onUseWifi: () -> Unit
@@ -408,6 +465,20 @@ fun WifiTab(
     var isScanning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    // Retreives both Robot scanned networks AND Phone local antenna scanned networks
+    fun getPhoneLocalWifiNetworks(context: Context): List<String> {
+        return try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                wifiManager.scanResults.mapNotNull { it.SSID }.filter { it.isNotEmpty() }.distinct()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())
@@ -420,26 +491,26 @@ fun WifiTab(
             ) {
                 isScanning = true
                 scope.launch(Dispatchers.IO) {
+                    val robotNetworks = mutableListOf<String>()
                     try {
                         val url = URL("http://$ipAddress/scan")
                         val conn = url.openConnection() as HttpURLConnection
+                        conn.connectTimeout = 4000
                         val resp = conn.inputStream.bufferedReader().use { it.readText() }
                         val arr = JSONArray(resp)
-                        val list = mutableListOf<String>()
-                        for (i in 0 until arr.length()) list.add(arr.getString(i))
-                        
-                        withContext(Dispatchers.Main) {
-                            ssidList = list
-                            if (list.isNotEmpty()) selectedSsid = list[0]
-                            isScanning = false
-                            Toast.makeText(context, "Found ${list.size} networks", Toast.LENGTH_SHORT).show()
-                        }
+                        for (i in 0 until arr.length()) robotNetworks.add(arr.getString(i))
                         conn.disconnect()
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            isScanning = false
-                            Toast.makeText(context, "Scan Failed", Toast.LENGTH_SHORT).show()
-                        }
+                    } catch (e: Exception) {}
+
+                    // Fetch local networks seen directly by the phone
+                    val phoneNetworks = getPhoneLocalWifiNetworks(context)
+                    val mergedList = (robotNetworks + phoneNetworks).distinct().sorted()
+
+                    withContext(Dispatchers.Main) {
+                        ssidList = mergedList
+                        if (mergedList.isNotEmpty()) selectedSsid = mergedList[0]
+                        isScanning = false
+                        Toast.makeText(context, "Merged scan: found ${mergedList.size} networks", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -514,12 +585,14 @@ fun RobotTab(
     onSliderChangeFinished: () -> Unit,
     onSensorConfigUpdate: (String, String, String, String, Boolean) -> Unit,
     onRobotAction: (String) -> Unit,
-    onAudioCommand: (String, JSONObject) -> Unit
+    onAudioCommand: (String, JSONObject) -> Unit,
+    onWalkieTalkie: () -> Unit
 ) {
     val context = LocalContext.current
     var isStreamingMic by remember { mutableStateOf(false) }
     var socketHolder by remember { mutableStateOf<Socket?>(null) }
     var audioRecordHolder by remember { mutableStateOf<AudioRecord?>(null) }
+    var listenMicActive by remember { mutableStateOf(false) }
 
     fun startWalkieTalkie() {
         if (!hasAudioPermission) {
@@ -577,7 +650,7 @@ fun RobotTab(
         }
 
         // ==========================================
-        // AUDIO & SPEAKER OUTPUT CARD (Moved to top)
+        // AUDIO & SPEAKER OUTPUT CARD
         // ==========================================
         CardContainer(title = "Audio & Speaker Output") {
             var localVolume by remember { mutableStateOf(audioVolume) }
@@ -612,6 +685,7 @@ fun RobotTab(
                 detectTapGestures(
                     onPress = {
                         startWalkieTalkie()
+                        onWalkieTalkie()
                         tryAwaitRelease()
                         stopWalkieTalkie()
                     }
@@ -627,26 +701,12 @@ fun RobotTab(
             
             Spacer(modifier = Modifier.height(15.dp))
             
-            // Listen to Robot Mic
-            var listenMicActive by remember { mutableStateOf(false) }
-            if (listenMicActive) {
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = true
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        }
-                    },
-                    update = { view ->
-                        val html = "<html><body style='margin:0;padding:0;'><audio controls autoplay style='width:100%;height:50px;'><source src='http://$ipAddress:82/' type='audio/wav'></audio></body></html>"
-                        view.loadDataWithBaseURL("http://$ipAddress/", html, "text/html", "UTF-8", null)
-                    },
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                )
-            }
+            // Listen to Robot Mic Composable (using a robust DisposableEffect clean stop mechanism)
+            AudioStreamPlayer(ipAddress = ipAddress, active = listenMicActive)
+
             HtmlButton(
-                text = if(listenMicActive) "Stop Listening to Robot" else "Listen to Robot Mic",
-                color = if(listenMicActive) BtnRed else BtnBlue,
+                text = if (listenMicActive) "Stop Listening to Robot" else "Listen to Robot Mic",
+                color = if (listenMicActive) BtnRed else BtnBlue,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             ) {
                 listenMicActive = !listenMicActive
@@ -759,6 +819,36 @@ fun RobotTab(
     }
 }
 
+// Separate Composable wrapper implementing dynamic closure of resources to immediately stop audio stream
+@Composable
+fun AudioStreamPlayer(ipAddress: String, active: Boolean) {
+    if (active) {
+        val context = LocalContext.current
+        val webView = remember {
+            WebView(context).apply {
+                settings.javaScriptEnabled = true
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                webViewClient = WebViewClient()
+            }
+        }
+
+        DisposableEffect(ipAddress) {
+            val html = "<html><body style='margin:0;padding:0;'><audio id='aud' controls autoplay style='width:100%;height:50px;'><source src='http://$ipAddress:82/' type='audio/wav'></audio></body></html>"
+            webView.loadDataWithBaseURL("http://$ipAddress/", html, "text/html", "UTF-8", null)
+            
+            onDispose {
+                webView.stopLoading()
+                webView.loadUrl("about:blank")
+            }
+        }
+
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxWidth().height(50.dp)
+        )
+    }
+}
+
 @Composable
 fun MotorSlider(
     label: String,
@@ -857,6 +947,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                         },
                         update = { view ->
                             val currentUrl = view.url ?: ""
+                            
                             if (!currentUrl.startsWith("data:text/html")) {
                                 val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://$ipAddress:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
                                 view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
@@ -890,6 +981,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     }
 }
 
+// Helper to fetch the HD snapshot, rotate it, and save directly to phone MediaStore
 suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
     withContext(Dispatchers.IO) {
         try {
@@ -942,6 +1034,7 @@ suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: I
     }
 }
 
+// Reusable Component for Dropdowns
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LabeledDropdown(
