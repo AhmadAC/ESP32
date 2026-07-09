@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -851,19 +852,15 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
                                 setBackgroundColor(android.graphics.Color.BLACK)
-                                // Ignore touch interactions to ensure the user can still swipe the tab layout
                                 setOnTouchListener { _, _ -> false } 
                             }
                         },
                         update = { view ->
                             val currentUrl = view.url ?: ""
-                            
-                            // Load custom HTML wrapper to force black background and support JS rotation
                             if (!currentUrl.startsWith("data:text/html")) {
                                 val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://$ipAddress:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
                                 view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             }
-                            // Apply rotation natively via Javascript so it doesn't drop the MJPEG connection
                             view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg)';", null)
                         },
                         modifier = Modifier.fillMaxSize()
@@ -893,7 +890,6 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     }
 }
 
-// Helper to fetch the HD snapshot, rotate it, and save directly to phone MediaStore
 suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
     withContext(Dispatchers.IO) {
         try {
@@ -946,7 +942,6 @@ suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: I
     }
 }
 
-// Reusable Component for Dropdowns
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LabeledDropdown(
@@ -966,4 +961,60 @@ fun LabeledDropdown(
             onValueChange = {},
             readOnly = true,
             label = { Text(label, color = PrimaryColor) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expa
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                focusedTextColor = TextColor,
+                unfocusedTextColor = TextColor,
+                focusedBorderColor = PrimaryColor,
+                unfocusedBorderColor = BtnGray
+            ),
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(CardColor)
+        ) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(opt.uppercase().replace("_", " "), color = TextColor) },
+                    onClick = {
+                        onValueChange(opt)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CardContainer(title: String, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CardColor, RoundedCornerShape(16.dp))
+            .padding(20.dp)
+    ) {
+        Text(title, color = PrimaryColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        HorizontalDivider(color = Color(0xFF334155), modifier = Modifier.padding(vertical = 10.dp))
+        content()
+    }
+}
+
+@Composable
+fun HtmlButton(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = color),
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier.height(50.dp)
+    ) {
+        Text(text, fontWeight = FontWeight.Bold, color = Color.White)
+    }
+}
