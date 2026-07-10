@@ -37,7 +37,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(15.dp))
 
             Box(
-                modifier = Modifier.fillMaxWidth().height(300.dp).background(Color.Black, RoundedCornerShape(8.dp)),
+                modifier = Modifier.fillMaxWidth().aspectRatio(4f/3f).background(Color.Black, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
@@ -54,10 +54,11 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                         update = { view ->
                             val currentUrl = view.url ?: ""
                             if (!currentUrl.startsWith("data:text/html")) {
-                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
+                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:100%;object-fit:contain;transition:transform 0.2s;' /></body></html>"
                                 view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             }
-                            view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg)';", null)
+                            val scale = if (camRotation % 180 != 0) "scale(0.75)" else "scale(1)"
+                            view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg) $scale';", null)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
