@@ -40,7 +40,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(4f / 3f) // Set a stable 4:3 boundary to prevent view collapsing
+                    .aspectRatio(4f / 3f) // Constrains WebView aspect ratio within Jetpack Compose
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
@@ -52,44 +52,54 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                 settings.javaScriptEnabled = true
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
-                                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE // Prevent caching the multipart stream
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
                                 setBackgroundColor(android.graphics.Color.BLACK)
                                 setOnTouchListener { _, _ -> false } 
                             }
                         },
                         update = { view ->
-                            // Use the view tag to prevent reloading the HTML feed on every UI recomposition
-                            val currentIp = view.tag as? String
-                            if (currentIp != ipAddress) {
-                                view.tag = ipAddress
+                            val stateKey = "${ipAddress}_${camRotation}"
+                            val currentStateKey = view.tag as? String
+                            
+                            // Re-render HTML on IP updates or rotation changes
+                            if (currentStateKey != stateKey) {
+                                view.tag = stateKey
+                                
+                                // Explicitly size both html and body elements to 100% to inherit container dimensions properly
                                 val html = """
                                     <html>
                                     <head>
                                         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                        <style>
+                                            html, body {
+                                                width: 100%;
+                                                height: 100%;
+                                                margin: 0;
+                                                padding: 0;
+                                                background-color: black;
+                                            }
+                                            body {
+                                                display: flex;
+                                                justify-content: center;
+                                                align-items: center;
+                                                overflow: hidden;
+                                            }
+                                            img {
+                                                transform: rotate(${camRotation}deg);
+                                                ${if (camRotation % 180 != 0) "max-width: 75%; max-height: 75%;" else "max-width: 100%; max-height: 100%;"}
+                                                object-fit: contain;
+                                            }
+                                        </style>
                                     </head>
-                                    <body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;overflow:hidden;'>
-                                        <img id='stream' src='http://${ipAddress}:81/' style='max-width:100%;max-height:100%;object-fit:contain;transition:transform 0.2s;' />
+                                    <body>
+                                        <img src="http://${ipAddress}:81/" />
                                     </body>
                                     </html>
                                 """.trimIndent()
-                                view.loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
+                                
+                                // Passing null as base URL avoids cleartext and CORS origin restrictions
+                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             }
-                            
-                            // Dynamically adapt bounding boxes if rotated to prevent clipping
-                            val js = """
-                                var img = document.getElementById('stream');
-                                if(img) {
-                                    img.style.transform = 'rotate(${camRotation}deg)';
-                                    if (${camRotation} % 180 !== 0) {
-                                        img.style.maxWidth = '100vh';
-                                        img.style.maxHeight = '100vw';
-                                    } else {
-                                        img.style.maxWidth = '100%';
-                                        img.style.maxHeight = '100%';
-                                    }
-                                }
-                            """.trimIndent()
-                            view.evaluateJavascript(js, null)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
