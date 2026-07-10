@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,7 +38,11 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(15.dp))
 
             Box(
-                modifier = Modifier.fillMaxWidth().height(300.dp).background(Color.Black, RoundedCornerShape(8.dp)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f) // Set a stable 4:3 boundary to prevent view collapsing
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
@@ -47,17 +52,44 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                 settings.javaScriptEnabled = true
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE // Prevent caching the multipart stream
                                 setBackgroundColor(android.graphics.Color.BLACK)
                                 setOnTouchListener { _, _ -> false } 
                             }
                         },
                         update = { view ->
-                            val currentUrl = view.url ?: ""
-                            if (!currentUrl.startsWith("data:text/html")) {
-                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:auto;transition:transform 0.2s;' /></body></html>"
-                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                            // Use the view tag to prevent reloading the HTML feed on every UI recomposition
+                            val currentIp = view.tag as? String
+                            if (currentIp != ipAddress) {
+                                view.tag = ipAddress
+                                val html = """
+                                    <html>
+                                    <head>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                    </head>
+                                    <body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;overflow:hidden;'>
+                                        <img id='stream' src='http://${ipAddress}:81/' style='max-width:100%;max-height:100%;object-fit:contain;transition:transform 0.2s;' />
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+                                view.loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
                             }
-                            view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg)';", null)
+                            
+                            // Dynamically adapt bounding boxes if rotated to prevent clipping
+                            val js = """
+                                var img = document.getElementById('stream');
+                                if(img) {
+                                    img.style.transform = 'rotate(${camRotation}deg)';
+                                    if (${camRotation} % 180 !== 0) {
+                                        img.style.maxWidth = '100vh';
+                                        img.style.maxHeight = '100vw';
+                                    } else {
+                                        img.style.maxWidth = '100%';
+                                        img.style.maxHeight = '100%';
+                                    }
+                                }
+                            """.trimIndent()
+                            view.evaluateJavascript(js, null)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
