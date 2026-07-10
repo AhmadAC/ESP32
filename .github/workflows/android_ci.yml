@@ -4,9 +4,9 @@ name: MrCooperESP32 Android CI
 
 on:
   push:
-    branches: [ "esp", "master" ]
+    branches: [ "broken", "master" ]
   pull_request:
-    branches: [ "esp", "master" ]
+    branches: [ "broken", "master" ]
   # Allows you to trigger the build manually from the Actions tab in GitHub
   workflow_dispatch: 
 
