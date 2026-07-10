@@ -43,7 +43,8 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
-                    // Re-instantiate a fresh WebView if the IP Address changes
+                    // Initialize the WebView exactly ONCE per IP Address to prevent the 800ms 
+                    // MainScreen polling loop from constantly interrupting the MJPEG socket stream.
                     val webView = remember(ipAddress) {
                         WebView(context).apply {
                             settings.javaScriptEnabled = true
@@ -55,14 +56,15 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                             setBackgroundColor(android.graphics.Color.BLACK)
                             setOnTouchListener { _, _ -> false } 
 
-                            // The timestamp ?t= forces the browser to open a fresh TCP socket and bypass internal cache
+                            // The timestamp ?t= forces the Chromium engine to open a fresh TCP socket 
+                            // and explicitly bypass the internal HTTP cache
                             val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;'><img id='stream' src='http://${ipAddress}:81/?t=${System.currentTimeMillis()}' style='width:100%;height:100%;object-fit:contain;transition:transform 0.2s;' /></body></html>"
                             loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
                         }
                     }
 
-                    // CRITICAL FIX: Ensures the TCP socket from the WebView to the ESP32 (Port 81) is properly terminated
-                    // If the socket isn't closed, the ESP32 connection pool maxes out and displays black screens!
+                    // CRITICAL FIX: Ensures the TCP socket from the WebView to the ESP32 (Port 81) is cleanly terminated.
+                    // If the socket isn't closed on disposal, the ESP32 connection pool maxes out at 3 and displays black screens!
                     DisposableEffect(webView) {
                         onDispose {
                             webView.stopLoading()
@@ -74,6 +76,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                     AndroidView(
                         factory = { webView },
                         update = { view ->
+                            // Only update visual transform rotations dynamically so we don't drop the live socket
                             val scale = if (camRotation % 180 != 0) "scale(0.75)" else "scale(1)"
                             view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg) $scale';", null)
                         },
