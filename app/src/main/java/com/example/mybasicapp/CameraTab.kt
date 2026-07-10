@@ -1,7 +1,9 @@
 // app/src/main/java/com/example/mybasicapp/CameraTab.kt
 package com.example.mybasicapp
 
+import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -41,22 +43,31 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
+                    val webView = remember {
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            webViewClient = WebViewClient()
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            setOnTouchListener { _, _ -> false } 
+                        }
+                    }
+
+                    DisposableEffect(ipAddress) {
+                        val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:100%;object-fit:contain;transition:transform 0.2s;' /></body></html>"
+                        webView.loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
+                        
+                        onDispose {
+                            webView.stopLoading()
+                            webView.loadUrl("about:blank")
+                        }
+                    }
+
                     AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                setBackgroundColor(android.graphics.Color.BLACK)
-                                setOnTouchListener { _, _ -> false } 
-                            }
-                        },
+                        factory = { webView },
                         update = { view ->
-                            val currentUrl = view.url ?: ""
-                            if (!currentUrl.startsWith("data:text/html")) {
-                                val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;'><img id='stream' src='http://${ipAddress}:81/' style='width:100%;height:100%;object-fit:contain;transition:transform 0.2s;' /></body></html>"
-                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                            }
                             val scale = if (camRotation % 180 != 0) "scale(0.75)" else "scale(1)"
                             view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg) $scale';", null)
                         },
