@@ -47,7 +47,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var audioVolume by remember { mutableStateOf(50f) }
     var lastLockState by remember { mutableStateOf(false) }
     
-    // Scanner UI states
     var isScanningSubnet by remember { mutableStateOf(false) }
     var subnetProgress by remember { mutableStateOf(0f) }
     var discoveredIps by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -202,7 +201,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             onClick = {
                                 ipAddress = ip
                                 ipsDropdownExpanded = false
-                                isPolling = true // Automatically connect when clicked
+                                isPolling = true 
                                 Toast.makeText(context, "Connecting to $ip", Toast.LENGTH_SHORT).show()
                             }
                         )
@@ -212,28 +211,55 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             Spacer(modifier = Modifier.width(8.dp))
             
             HtmlButton(
-                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Scan Net",
+                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find Robot",
                 color = if (isScanningSubnet) BtnOrange else BtnPurple,
                 modifier = Modifier.width(100.dp)
             ) {
                 if (!isScanningSubnet) {
                     isScanningSubnet = true
-                    discoveredIps = emptyList()
-                    scanSubnetForWebServers(
-                        context = context,
-                        scope = scope,
-                        onProgress = { progress -> subnetProgress = progress },
-                        onFinished = { foundIps ->
+                    scope.launch {
+                        // 1. Try blazing fast UDP Broadcast
+                        val udpIp = findRobotViaUDP()
+                        if (udpIp != null) {
+                            ipAddress = udpIp
+                            isPolling = true
+                            Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
                             isScanningSubnet = false
-                            if (foundIps.isNotEmpty()) {
-                                discoveredIps = foundIps
-                                ipsDropdownExpanded = true
-                                Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
-                            } else {
-                                Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+
+                        // 2. Try zero-config mDNS
+                        var mdnsFound = false
+                        findRobotViaMDNS(context) { mdnsIp ->
+                            if (!mdnsFound) {
+                                mdnsFound = true
+                                ipAddress = mdnsIp
+                                isPolling = true
+                                Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
+                                isScanningSubnet = false
                             }
                         }
-                    )
+                        delay(4000) 
+
+                        // 3. Last Resort: Subnet Brute Force Scan
+                        if (!mdnsFound && isScanningSubnet) {
+                            scanSubnetForWebServers(
+                                context = context,
+                                scope = scope,
+                                onProgress = { progress -> subnetProgress = progress },
+                                onFinished = { foundIps ->
+                                    isScanningSubnet = false
+                                    if (foundIps.isNotEmpty()) {
+                                        discoveredIps = foundIps
+                                        ipsDropdownExpanded = true
+                                        Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -289,7 +315,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         sendPostRequest("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
                     },
                     onForceAp = { sendPostRequest("/switch_to_ap", JSONObject()) },
-                    onUseWifi = { sendPostRequest("/switch_to_wifi", JSONObject()) }
+                    onUseWifi = { sendPostRequest("/switch_to_wifi", JSONObject()) },
+                    onBleIpReceived = { ip -> 
+                        ipAddress = ip
+                        isPolling = true
+                    }
                 )
                 1 -> RobotTab(
                     ipAddress = ipAddress,

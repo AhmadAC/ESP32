@@ -28,7 +28,8 @@ fun WifiTab(
     hasLocationPermission: Boolean,
     onSaveWifi: (String, String) -> Unit,
     onForceAp: () -> Unit,
-    onUseWifi: () -> Unit
+    onUseWifi: () -> Unit,
+    onBleIpReceived: (String) -> Unit
 ) {
     var ssidList by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSsid by remember { mutableStateOf("") }
@@ -47,7 +48,47 @@ fun WifiTab(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
-        CardContainer(title = "Wi-Fi Provisioning") {
+        
+        CardContainer(title = "Bluetooth Initial Setup (First Time)") {
+            var bleSsid by remember { mutableStateOf("") }
+            var blePass by remember { mutableStateOf("") }
+            var bleStatus by remember { mutableStateOf("Ready") }
+            
+            OutlinedTextField(
+                value = bleSsid,
+                onValueChange = { bleSsid = it },
+                label = { Text("Your Home Wi-Fi Name (SSID)", color = PrimaryColor) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                    focusedTextColor = TextColor, unfocusedTextColor = TextColor
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(15.dp))
+            OutlinedTextField(
+                value = blePass,
+                onValueChange = { blePass = it },
+                label = { Text("Wi-Fi Password", color = PrimaryColor) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                    focusedTextColor = TextColor, unfocusedTextColor = TextColor
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(15.dp))
+            HtmlButton("Provision via Bluetooth", BtnPurple, Modifier.fillMaxWidth()) {
+                setupRobotViaBLE(context, bleSsid, blePass, { bleStatus = it }, { ip ->
+                    onBleIpReceived(ip)
+                })
+            }
+            Text("Status: $bleStatus", color = TextColor, modifier = Modifier.padding(top=10.dp))
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        CardContainer(title = "Wi-Fi Provisioning (Web Portal)") {
             HtmlButton(
                 text = if (isScanning) "Scanning..." else "Scan Wi-Fi Networks",
                 color = BtnGray,
