@@ -112,12 +112,17 @@ fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
     val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+            val currentListener = this
             if (serviceInfo.serviceName.contains("ESP32 Robot", ignoreCase = true) || serviceInfo.serviceName.contains("robotdog", ignoreCase = true)) {
                 nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                     override fun onServiceResolved(resolvedService: NsdServiceInfo) {
                         resolvedService.host?.hostAddress?.let { ip ->
                             Handler(Looper.getMainLooper()).post { onIpFound(ip) }
-                            nsdManager.stopServiceDiscovery(this@DiscoveryListener)
+                            try {
+                                nsdManager.stopServiceDiscovery(currentListener)
+                            } catch (e: Exception) {
+                                // Ignore if discovery was already stopped
+                            }
                         }
                     }
                     override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
@@ -127,8 +132,12 @@ fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
         override fun onDiscoveryStarted(regType: String) {}
         override fun onDiscoveryStopped(serviceType: String) {}
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {}
-        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { nsdManager.stopServiceDiscovery(this) }
-        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { nsdManager.stopServiceDiscovery(this) }
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { 
+            try { nsdManager.stopServiceDiscovery(this) } catch (e: Exception) {}
+        }
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { 
+            try { nsdManager.stopServiceDiscovery(this) } catch (e: Exception) {}
+        }
     }
     nsdManager.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
 }
