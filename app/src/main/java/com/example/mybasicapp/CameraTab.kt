@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     var camActive by remember { mutableStateOf(false) }
     var camRotation by remember { mutableStateOf(0) }
-    var testMode by remember { mutableStateOf(1) } // Default to V1 Flex Box
+    var testMode by remember { mutableStateOf(4) } // Defaulting to V4 so you immediately get your working stream back
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -53,6 +53,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                // NO MORE LAYOUT PARAMS HACK! Letting Compose handle the sizing.
                                 settings.javaScriptEnabled = true
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
@@ -68,72 +69,78 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                             val stateKey = "${ipAddress}_${camRotation}_${testMode}"
                             val currentStateKey = view.tag as? String
                             
-                            // Re-render HTML view only when IP, rotation, or testing strategy changes
                             if (currentStateKey != stateKey) {
                                 view.tag = stateKey
                                 
-                                val isVerticalRotation = camRotation % 180 != 0
-                                // Scale down slightly when rotated vertically so it doesn't clip the edges
-                                val scaleTransform = if (isVerticalRotation) "scale(0.75)" else "scale(1.0)"
-                                
                                 when (testMode) {
-                                    1, 4 -> {
-                                        // THE PERFECT FIX: Standard HTML5 with Viewport bounds & Object-Fit
+                                    1 -> {
+                                        // V1 (Absolute): Pins the image exactly to the center using absolute positioning.
                                         val html = """
-                                            <!DOCTYPE html>
                                             <html>
-                                            <head>
-                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                                <style>
-                                                    html, body { 
-                                                        width: 100%; 
-                                                        height: 100%; 
-                                                        margin: 0; 
-                                                        padding: 0; 
-                                                        background-color: black; 
-                                                        display: flex; 
-                                                        justify-content: center; 
-                                                        align-items: center; 
-                                                        overflow: hidden; 
-                                                    }
-                                                    img { 
-                                                        width: 100vw; 
-                                                        height: 100vh; 
-                                                        object-fit: contain; 
-                                                        transform: rotate(${camRotation}deg) $scaleTransform; 
-                                                    }
-                                                </style>
-                                            </head>
-                                            <body>
-                                                <img src="http://${ipAddress}:81/" />
+                                            <body style="margin:0;background:black;overflow:hidden;">
+                                                <img src="http://${ipAddress}:81/" style="position:absolute;top:0;left:0;right:0;bottom:0;margin:auto;max-width:100%;max-height:100%;transform:rotate(${camRotation}deg);" />
                                             </body>
                                             </html>
                                         """.trimIndent()
                                         view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                                     }
                                     2 -> {
-                                        // V2: Raw Native browser loads direct endpoint URL bypass
-                                        view.loadUrl("http://${ipAddress}:81/")
+                                        // V2 (Table): Uses old-school CSS tables. The most foolproof centering method in WebViews.
+                                        val html = """
+                                            <html style="width:100%;height:100%;">
+                                            <body style="margin:0;background:black;width:100%;height:100%;display:table;">
+                                                <div style="display:table-cell;vertical-align:middle;text-align:center;">
+                                                    <img src="http://${ipAddress}:81/" style="max-width:100%;max-height:100%;transform:rotate(${camRotation}deg);" />
+                                                </div>
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                                     }
                                     3 -> {
-                                        // V3: Iframe Container Integration
+                                        // V3 (Fit): Forces the image to contain itself within the strict bounds of the body.
                                         val html = """
-                                            <!DOCTYPE html>
-                                            <html>
-                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;display:flex;justify-content:center;align-items:center;width:100vw;height:100vh;">
-                                                <iframe src="http://${ipAddress}:81/" style="width:100vw;height:100vh;border:none;margin:0;padding:0;transform:rotate(${camRotation}deg) $scaleTransform;" />
+                                            <html style="width:100%;height:100%;">
+                                            <body style="margin:0;background:black;width:100%;height:100%;overflow:hidden;">
+                                                <img src="http://${ipAddress}:81/" style="width:100%;height:100%;object-fit:contain;transform:rotate(${camRotation}deg);" />
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                    }
+                                    4 -> {
+                                        // V4 EXACT ORIGINAL: Reverted literally to exactly what you had in the first screenshot.
+                                        val html = """
+                                            <html style="width:100%;height:100%;">
+                                            <body style="background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">
+                                                <img src="http://${ipAddress}:81/" style="width:100%;height:auto;transform:rotate(${camRotation}deg);" />
                                             </body>
                                             </html>
                                         """.trimIndent()
                                         view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                                     }
                                     5 -> {
-                                        // V5: CSS DIV background viewport container stretch
+                                        // V5 (JS-Scale): Uses Javascript to force calculate the exact size of the box and scales the video dynamically.
                                         val html = """
-                                            <!DOCTYPE html>
                                             <html>
-                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;">
-                                                <div style="width:100vw;height:100vh;background-image:url('http://${ipAddress}:81/');background-position:center;background-repeat:no-repeat;background-size:contain;transform:rotate(${camRotation}deg) $scaleTransform;"></div>
+                                            <body style="margin:0;background:black;overflow:hidden;text-align:center;">
+                                                <img id="cam" src="http://${ipAddress}:81/" style="transform:rotate(${camRotation}deg);" />
+                                                <script>
+                                                    setInterval(function(){
+                                                        var img = document.getElementById('cam');
+                                                        var maxW = window.innerWidth;
+                                                        var maxH = window.innerHeight;
+                                                        var ratio = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+                                                        if (ratio > 0) {
+                                                            img.style.width = (img.naturalWidth * ratio) + 'px';
+                                                            img.style.height = (img.naturalHeight * ratio) + 'px';
+                                                            img.style.marginTop = Math.max(0, (maxH - (img.naturalHeight * ratio)) / 2) + 'px';
+                                                        } else {
+                                                            img.style.maxWidth = '100%';
+                                                            img.style.maxHeight = '100%';
+                                                        }
+                                                    }, 500);
+                                                </script>
                                             </body>
                                             </html>
                                         """.trimIndent()
@@ -171,14 +178,14 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                HtmlButton("V1: Flex", if (testMode == 1) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 1 }
-                HtmlButton("V2: Raw", if (testMode == 2) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 2 }
-                HtmlButton("V3: Iframe", if (testMode == 3) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 3 }
+                HtmlButton("V1: Absolute", if (testMode == 1) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 1 }
+                HtmlButton("V2: Table", if (testMode == 2) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 2 }
+                HtmlButton("V3: Fit", if (testMode == 3) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 3 }
             }
             Spacer(modifier = Modifier.height(5.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 HtmlButton("V4: Legacy", if (testMode == 4) BtnGreen else BtnGray, Modifier.weight(1.2f).padding(2.dp)) { testMode = 4 }
-                HtmlButton("V5: DivBg", if (testMode == 5) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 5 }
+                HtmlButton("V5: JS-Scale", if (testMode == 5) BtnGreen else BtnGray, Modifier.weight(1.2f).padding(2.dp)) { testMode = 5 }
             }
         }
     }
