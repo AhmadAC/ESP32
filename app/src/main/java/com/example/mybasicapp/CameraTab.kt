@@ -1,9 +1,7 @@
 // app/src/main/java/com/example/mybasicapp/CameraTab.kt
 package com.example.mybasicapp
 
-import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -39,46 +38,62 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(15.dp))
 
             Box(
-                modifier = Modifier.fillMaxWidth().aspectRatio(4f/3f).background(Color.Black, RoundedCornerShape(8.dp)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
                 if (camActive) {
-                    // Initialize the WebView exactly ONCE per IP Address to prevent the 800ms 
-                    // MainScreen polling loop from constantly interrupting the MJPEG socket stream.
-                    val webView = remember(ipAddress) {
-                        WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.loadWithOverviewMode = true
-                            settings.useWideViewPort = true
-                            settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            webViewClient = WebViewClient()
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                            setOnTouchListener { _, _ -> false } 
-
-                            // The timestamp ?t= forces the Chromium engine to open a fresh TCP socket 
-                            // and explicitly bypass the internal HTTP cache
-                            val html = "<html><body style='background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100%;overflow:hidden;'><img id='stream' src='http://${ipAddress}:81/?t=${System.currentTimeMillis()}' style='width:100%;height:100%;object-fit:contain;transition:transform 0.2s;' /></body></html>"
-                            loadDataWithBaseURL("http://${ipAddress}/", html, "text/html", "UTF-8", null)
-                        }
-                    }
-
-                    // CRITICAL FIX: Ensures the TCP socket from the WebView to the ESP32 (Port 81) is cleanly terminated.
-                    // If the socket isn't closed on disposal, the ESP32 connection pool maxes out at 3 and displays black screens!
-                    DisposableEffect(webView) {
-                        onDispose {
-                            webView.stopLoading()
-                            webView.loadUrl("about:blank")
-                            webView.destroy()
-                        }
-                    }
-
                     AndroidView(
-                        factory = { webView },
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                }
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                                setOnTouchListener { _, _ -> false } 
+                            }
+                        },
                         update = { view ->
-                            // Only update visual transform rotations dynamically so we don't drop the live socket
-                            val scale = if (camRotation % 180 != 0) "scale(0.75)" else "scale(1)"
-                            view.evaluateJavascript("if(document.getElementById('stream')) document.getElementById('stream').style.transform = 'rotate(${camRotation}deg) $scale';", null)
+                            val stateKey = "${ipAddress}_${camRotation}"
+                            val currentStateKey = view.tag as? String
+                            
+                            // Re-render HTML view only when IP or rotation changes
+                            if (currentStateKey != stateKey) {
+                                view.tag = stateKey
+                                
+                                // JS-Scale: Dynamically calculates box size and scales video flawlessly
+                                val html = """
+                                    <html>
+                                    <body style="margin:0;background:black;overflow:hidden;text-align:center;">
+                                        <img id="cam" src="http://${ipAddress}:81/" style="transform:rotate(${camRotation}deg);" />
+                                        <script>
+                                            setInterval(function(){
+                                                var img = document.getElementById('cam');
+                                                var maxW = window.innerWidth;
+                                                var maxH = window.innerHeight;
+                                                var ratio = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+                                                if (ratio > 0) {
+                                                    img.style.width = (img.naturalWidth * ratio) + 'px';
+                                                    img.style.height = (img.naturalHeight * ratio) + 'px';
+                                                    img.style.marginTop = Math.max(0, (maxH - (img.naturalHeight * ratio)) / 2) + 'px';
+                                                } else {
+                                                    img.style.maxWidth = '100%';
+                                                    img.style.maxHeight = '100%';
+                                                }
+                                            }, 500);
+                                        </script>
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                            }
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -98,7 +113,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
-            HtmlButton("Save HD Picture", BtnGreen, Modifier.fillMaxWidth()) {
+            HtmlButton("Save Picture", BtnGreen, Modifier.fillMaxWidth()) {
                 coroutineScope.launch { saveImageToGallery(context, ipAddress, camRotation) }
             }
         }
