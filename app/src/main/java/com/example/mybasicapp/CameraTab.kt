@@ -14,7 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 
@@ -22,6 +24,7 @@ import kotlinx.coroutines.launch
 fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
     var camActive by remember { mutableStateOf(false) }
     var camRotation by remember { mutableStateOf(0) }
+    var testMode by remember { mutableStateOf(1) } // Default to V1 Flex Box
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -40,7 +43,7 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(4f / 3f) // Constrains WebView aspect ratio within Jetpack Compose
+                    .aspectRatio(4f / 3f)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
@@ -53,52 +56,82 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
                                 settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                }
                                 setBackgroundColor(android.graphics.Color.BLACK)
                                 setOnTouchListener { _, _ -> false } 
                             }
                         },
                         update = { view ->
-                            val stateKey = "${ipAddress}_${camRotation}"
+                            val stateKey = "${ipAddress}_${camRotation}_${testMode}"
                             val currentStateKey = view.tag as? String
                             
-                            // Re-render HTML on IP updates or rotation changes
+                            // Re-render HTML view only when IP, rotation, or testing strategy changes
                             if (currentStateKey != stateKey) {
                                 view.tag = stateKey
                                 
-                                // Explicitly size both html and body elements to 100% to inherit container dimensions properly
-                                val html = """
-                                    <html>
-                                    <head>
-                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                        <style>
-                                            html, body {
-                                                width: 100%;
-                                                height: 100%;
-                                                margin: 0;
-                                                padding: 0;
-                                                background-color: black;
-                                            }
-                                            body {
-                                                display: flex;
-                                                justify-content: center;
-                                                align-items: center;
-                                                overflow: hidden;
-                                            }
-                                            img {
-                                                transform: rotate(${camRotation}deg);
-                                                ${if (camRotation % 180 != 0) "max-width: 75%; max-height: 75%;" else "max-width: 100%; max-height: 100%;"}
-                                                object-fit: contain;
-                                            }
-                                        </style>
-                                    </head>
-                                    <body>
-                                        <img src="http://${ipAddress}:81/" />
-                                    </body>
-                                    </html>
-                                """.trimIndent()
+                                val isVerticalRotation = camRotation % 180 != 0
+                                val imgSize = if (isVerticalRotation) "75%" else "100%"
                                 
-                                // Passing null as base URL avoids cleartext and CORS origin restrictions
-                                view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                when (testMode) {
+                                    1 -> {
+                                        // V1: Flex Box Containment with absolute size variables
+                                        val html = """
+                                            <html>
+                                            <head>
+                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                                <style>
+                                                    html, body { width: 100%; height: 100%; margin: 0; padding: 0; background-color: black; }
+                                                    body { display: flex; justify-content: center; align-items: center; overflow: hidden; }
+                                                    img { width: $imgSize; height: $imgSize; object-fit: contain; transform: rotate(${camRotation}deg); transition: transform 0.2s; }
+                                                </style>
+                                            </head>
+                                            <body>
+                                                <img src="http://${ipAddress}:81/" />
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                    }
+                                    2 -> {
+                                        // V2: Raw Native browser loads direct endpoint URL bypass
+                                        view.loadUrl("http://${ipAddress}:81/")
+                                    }
+                                    3 -> {
+                                        // V3: Iframe Container Integration
+                                        val html = """
+                                            <html>
+                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;display:flex;justify-content:center;align-items:center;width:100%;height:100%;">
+                                                <iframe src="http://${ipAddress}:81/" style="width:100%;height:100%;border:none;margin:0;padding:0;transform:rotate(${camRotation}deg);scale(${if (isVerticalRotation) "0.75" else "1.0"});" />
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                    }
+                                    4 -> {
+                                        // V4: Legacy format structure with updated explicit body height
+                                        val html = """
+                                            <html style="width:100%;height:100%;">
+                                            <body style="background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">
+                                                <img src="http://${ipAddress}:81/" style="width:100%;height:auto;transform:rotate(${camRotation}deg);" />
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                    }
+                                    5 -> {
+                                        // V5: CSS DIV background viewport container stretch
+                                        val html = """
+                                            <html>
+                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;">
+                                                <div style="width:100vw;height:100vh;background-image:url('http://${ipAddress}:81/');background-position:center;background-repeat:no-repeat;background-size:contain;transform:rotate(${camRotation}deg);scale(${if (isVerticalRotation) "0.75" else "1.0"});"></div>
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                                    }
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxSize()
@@ -121,6 +154,23 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
             Spacer(modifier = Modifier.height(10.dp))
             HtmlButton("Save HD Picture", BtnGreen, Modifier.fillMaxWidth()) {
                 coroutineScope.launch { saveImageToGallery(context, ipAddress, camRotation) }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = Color(0xFF334155), modifier = Modifier.padding(vertical = 10.dp))
+            
+            Text("Beta Stream Engine Option:", color = TextColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                HtmlButton("V1: Flex", if (testMode == 1) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 1 }
+                HtmlButton("V2: Raw", if (testMode == 2) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 2 }
+                HtmlButton("V3: Iframe", if (testMode == 3) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 3 }
+            }
+            Spacer(modifier = Modifier.height(5.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                HtmlButton("V4: Legacy", if (testMode == 4) BtnGreen else BtnGray, Modifier.weight(1.2f).padding(2.dp)) { testMode = 4 }
+                HtmlButton("V5: DivBg", if (testMode == 5) BtnGreen else BtnGray, Modifier.weight(1f).padding(2.dp)) { testMode = 5 }
             }
         }
     }
