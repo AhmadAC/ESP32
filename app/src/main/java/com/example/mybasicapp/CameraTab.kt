@@ -73,19 +73,35 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                 view.tag = stateKey
                                 
                                 val isVerticalRotation = camRotation % 180 != 0
-                                val imgSize = if (isVerticalRotation) "75%" else "100%"
+                                // Scale down slightly when rotated vertically so it doesn't clip the edges
+                                val scaleTransform = if (isVerticalRotation) "scale(0.75)" else "scale(1.0)"
                                 
                                 when (testMode) {
-                                    1 -> {
-                                        // V1: Flex Box Containment with absolute size variables
+                                    1, 4 -> {
+                                        // THE PERFECT FIX: Standard HTML5 with Viewport bounds & Object-Fit
                                         val html = """
+                                            <!DOCTYPE html>
                                             <html>
                                             <head>
                                                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                                                 <style>
-                                                    html, body { width: 100%; height: 100%; margin: 0; padding: 0; background-color: black; }
-                                                    body { display: flex; justify-content: center; align-items: center; overflow: hidden; }
-                                                    img { width: $imgSize; height: $imgSize; object-fit: contain; transform: rotate(${camRotation}deg); transition: transform 0.2s; }
+                                                    html, body { 
+                                                        width: 100%; 
+                                                        height: 100%; 
+                                                        margin: 0; 
+                                                        padding: 0; 
+                                                        background-color: black; 
+                                                        display: flex; 
+                                                        justify-content: center; 
+                                                        align-items: center; 
+                                                        overflow: hidden; 
+                                                    }
+                                                    img { 
+                                                        width: 100vw; 
+                                                        height: 100vh; 
+                                                        object-fit: contain; 
+                                                        transform: rotate(${camRotation}deg) $scaleTransform; 
+                                                    }
                                                 </style>
                                             </head>
                                             <body>
@@ -102,20 +118,10 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                     3 -> {
                                         // V3: Iframe Container Integration
                                         val html = """
+                                            <!DOCTYPE html>
                                             <html>
-                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;display:flex;justify-content:center;align-items:center;width:100%;height:100%;">
-                                                <iframe src="http://${ipAddress}:81/" style="width:100%;height:100%;border:none;margin:0;padding:0;transform:rotate(${camRotation}deg);scale(${if (isVerticalRotation) "0.75" else "1.0"});" />
-                                            </body>
-                                            </html>
-                                        """.trimIndent()
-                                        view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                                    }
-                                    4 -> {
-                                        // V4: Legacy format structure with updated explicit body height
-                                        val html = """
-                                            <html style="width:100%;height:100%;">
-                                            <body style="background:black;margin:0;padding:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">
-                                                <img src="http://${ipAddress}:81/" style="width:100%;height:auto;transform:rotate(${camRotation}deg);" />
+                                            <body style="margin:0;padding:0;background-color:black;overflow:hidden;display:flex;justify-content:center;align-items:center;width:100vw;height:100vh;">
+                                                <iframe src="http://${ipAddress}:81/" style="width:100vw;height:100vh;border:none;margin:0;padding:0;transform:rotate(${camRotation}deg) $scaleTransform;" />
                                             </body>
                                             </html>
                                         """.trimIndent()
@@ -124,9 +130,10 @@ fun CameraTab(ipAddress: String, onFlipCamera: () -> Unit) {
                                     5 -> {
                                         // V5: CSS DIV background viewport container stretch
                                         val html = """
+                                            <!DOCTYPE html>
                                             <html>
                                             <body style="margin:0;padding:0;background-color:black;overflow:hidden;">
-                                                <div style="width:100vw;height:100vh;background-image:url('http://${ipAddress}:81/');background-position:center;background-repeat:no-repeat;background-size:contain;transform:rotate(${camRotation}deg);scale(${if (isVerticalRotation) "0.75" else "1.0"});"></div>
+                                                <div style="width:100vw;height:100vh;background-image:url('http://${ipAddress}:81/');background-position:center;background-repeat:no-repeat;background-size:contain;transform:rotate(${camRotation}deg) $scaleTransform;"></div>
                                             </body>
                                             </html>
                                         """.trimIndent()
