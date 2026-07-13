@@ -157,140 +157,183 @@ fun setupRobotViaBLE(
     onStatus: (String) -> Unit,
     onIpReceived: (String) -> Unit
 ) {
-    val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-    val adapter = manager.adapter
-    if (adapter == null || !adapter.isEnabled) {
-        onStatus("Bluetooth is disabled")
-        return
-    }
+    try {
+        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val adapter = manager.adapter
+        if (adapter == null || !adapter.isEnabled) {
+            onStatus("Bluetooth is disabled")
+            return
+        }
 
-    val scanner = adapter.bluetoothLeScanner
-    if (scanner == null) {
-        onStatus("BLE Scanner unavailable")
-        return
-    }
+        val scanner = adapter.bluetoothLeScanner
+        if (scanner == null) {
+            onStatus("BLE Scanner unavailable")
+            return
+        }
 
-    onStatus("Scanning for ESPRobot...")
-    var isConnecting = false
+        onStatus("Scanning for ESPRobot...")
+        var isConnecting = false
 
-    val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val name = result.device.name ?: result.scanRecord?.deviceName
-            if (name == "ESPRobot" && !isConnecting) {
-                isConnecting = true
-                scanner.stopScan(this)
-                onStatus("Found Robot! Connecting...")
-
-                val gattCallback = object : BluetoothGattCallback() {
-                    override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-                        if (status != BluetoothGatt.GATT_SUCCESS) {
-                            // Clear zombie cache and release if Android issues a GATT 133 error
-                            Handler(Looper.getMainLooper()).post { onStatus("GATT Error $status. Retrying...") }
-                            gatt.close()
-                            isConnecting = false
-                            return
-                        }
-
-                        if (newState == BluetoothProfile.STATE_CONNECTED) {
-                            Handler(Looper.getMainLooper()).post { onStatus("Connected. Waiting for services...") }
-                            
-                            // Delaying discovery fixes an Android 12+ bug where services return empty
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                try { gatt.discoverServices() } catch (e: SecurityException) { }
-                            }, 600)
-                            
-                        } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                            if (isConnecting) {
-                                Handler(Looper.getMainLooper()).post { onStatus("Disconnected from robot.") }
-                            }
-                            gatt.close()
-                            isConnecting = false
-                        }
+        val scanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                try {
+                    // Safe access block for API 31+ strictly requiring BLUETOOTH_CONNECT merely to read device name
+                    val name = try {
+                        result.device.name ?: result.scanRecord?.deviceName
+                    } catch (e: SecurityException) {
+                        result.scanRecord?.deviceName
                     }
 
-                    override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-                        if (status != BluetoothGatt.GATT_SUCCESS) return
+                    if (name == "ESPRobot" && !isConnecting) {
+                        isConnecting = true
+                        try { scanner.stopScan(this) } catch (e: Exception) {}
+                        onStatus("Found Robot! Connecting...")
 
-                        val svcUuid = UUID.fromString("0000abf0-0000-1000-8000-00805f9b34fb")
-                        val credsUuid = UUID.fromString("0000abf2-0000-1000-8000-00805f9b34fb")
-                        val ipUuid = UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")
+                        val gattCallback = object : BluetoothGattCallback() {
+                            override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+                                try {
+                                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                                        Handler(Looper.getMainLooper()).post { onStatus("GATT Error $status. Retrying...") }
+                                        try { gatt.close() } catch (e: Exception) {}
+                                        isConnecting = false
+                                        return
+                                    }
 
-                        val service = gatt.getService(svcUuid)
-                        if (service != null) {
-                            Handler(Looper.getMainLooper()).post { onStatus("Subscribing to IP Updates...") }
-                            val ipChar = service.getCharacteristic(ipUuid)
-                            gatt.setCharacteristicNotification(ipChar, true)
-                            
-                            val desc = ipChar.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                            if (desc != null) {
-                                // Modern Android requires setting descriptor types explicitly if deprecated functions are avoided, 
-                                // but legacy writeDescriptor is still safe for simple CCCD triggers
-                                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                gatt.writeDescriptor(desc)
-                            }
-                            
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                onStatus("Sending Wi-Fi Credentials...")
-                                val credsChar = service.getCharacteristic(credsUuid)
-                                val payload = "$ssid,$pass".toByteArray()
-                                
-                                // Compatibility wrapper for Android 13+ Write without Response
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    gatt.writeCharacteristic(credsChar, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-                                } else {
-                                    credsChar.value = payload
-                                    gatt.writeCharacteristic(credsChar)
+                                    if (newState == BluetoothProfile.STATE_CONNECTED) {
+                                        Handler(Looper.getMainLooper()).post { onStatus("Connected. Waiting for services...") }
+                                        
+                                        // Delaying discovery bypasses an Android 12+ timing bug where services return completely empty
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            try { gatt.discoverServices() } catch (e: Exception) { }
+                                        }, 600)
+                                        
+                                    } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                                        if (isConnecting) {
+                                            Handler(Looper.getMainLooper()).post { onStatus("Disconnected from robot.") }
+                                        }
+                                        try { gatt.close() } catch (e: Exception) {}
+                                        isConnecting = false
+                                    }
+                                } catch (e: Exception) {
+                                    Handler(Looper.getMainLooper()).post { onStatus("Connection error occurred") }
                                 }
-                                
-                                onStatus("Waiting for Robot to connect to Wi-Fi...")
-                            }, 800)
-                        } else {
-                            Handler(Looper.getMainLooper()).post { onStatus("Invalid Service on Device") }
-                            gatt.disconnect()
-                        }
-                    }
+                            }
 
-                    override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-                        // Forward compatibility for legacy and Android 13+ byte reads
-                        val value = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            // (If you were overriding the API 33 signature, you'd use the provided byte array, 
-                            // but this overrides the classic signature, so accessing `value` directly is fine here)
-                            characteristic.value
-                        } else {
-                            characteristic.value
-                        }
+                            override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+                                try {
+                                    if (status != BluetoothGatt.GATT_SUCCESS) return
 
-                        if (characteristic.uuid == UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")) {
-                            val ip = String(value)
-                            if (ip != "0.0.0.0") {
-                                Handler(Looper.getMainLooper()).post {
-                                    onStatus("Connected to Wi-Fi!")
-                                    onIpReceived(ip)
+                                    val svcUuid = UUID.fromString("0000abf0-0000-1000-8000-00805f9b34fb")
+                                    val credsUuid = UUID.fromString("0000abf2-0000-1000-8000-00805f9b34fb")
+                                    val ipUuid = UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")
+
+                                    val service = gatt.getService(svcUuid)
+                                    if (service != null) {
+                                        Handler(Looper.getMainLooper()).post { onStatus("Subscribing to IP Updates...") }
+                                        val ipChar = service.getCharacteristic(ipUuid)
+                                        if (ipChar != null) {
+                                            gatt.setCharacteristicNotification(ipChar, true)
+                                            
+                                            val desc = ipChar.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                                            if (desc != null) {
+                                                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                                try { gatt.writeDescriptor(desc) } catch (e: Exception) {}
+                                            }
+                                        } else {
+                                            Handler(Looper.getMainLooper()).post { onStatus("Warning: IP Characteristic missing") }
+                                        }
+                                        
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            try {
+                                                onStatus("Sending Wi-Fi Credentials...")
+                                                val credsChar = service.getCharacteristic(credsUuid)
+                                                
+                                                if (credsChar != null) {
+                                                    val payload = "$ssid,$pass".toByteArray()
+                                                    
+                                                    // Compatibility wrapper to circumvent API 33+ parameter deprecation crashes
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                        gatt.writeCharacteristic(credsChar, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                                                    } else {
+                                                        credsChar.value = payload
+                                                        gatt.writeCharacteristic(credsChar)
+                                                    }
+                                                    onStatus("Waiting for Robot to connect to Wi-Fi...")
+                                                } else {
+                                                    onStatus("Credentials Characteristic missing on device")
+                                                }
+                                            } catch (e: Exception) {
+                                                onStatus("Permission Denied writing characteristic")
+                                            }
+                                        }, 800)
+                                    } else {
+                                        Handler(Looper.getMainLooper()).post { onStatus("Invalid Service on Device") }
+                                        try { gatt.disconnect() } catch (e: Exception) {}
+                                    }
+                                } catch (e: Exception) {
+                                    Handler(Looper.getMainLooper()).post { onStatus("Error processing services") }
                                 }
-                                isConnecting = false
-                                gatt.disconnect()
+                            }
+
+                            // -------------------------------------------------------------
+                            // Modern Android 13+ (API 33) signature method implementation
+                            // -------------------------------------------------------------
+                            override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+                                handleIpChanged(characteristic, value, gatt)
+                            }
+
+                            // -------------------------------------------------------------
+                            // Backwards compatible method to cover Android 12 and below
+                            // -------------------------------------------------------------
+                            @Deprecated("Deprecated in Java")
+                            override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+                                handleIpChanged(characteristic, characteristic.value, gatt)
+                            }
+
+                            private fun handleIpChanged(characteristic: BluetoothGattCharacteristic, value: ByteArray?, gatt: BluetoothGatt) {
+                                if (value == null) return
+                                if (characteristic.uuid == UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")) {
+                                    val ip = String(value)
+                                    if (ip != "0.0.0.0") {
+                                        Handler(Looper.getMainLooper()).post {
+                                            onStatus("Connected to Wi-Fi!")
+                                            onIpReceived(ip)
+                                        }
+                                        isConnecting = false
+                                        try { gatt.disconnect() } catch (e: Exception) {}
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                // CRITICAL FIX: Forcing TRANSPORT_LE prevents Android trying to pair to the ESP32 as a Classic Bluetooth headset
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    result.device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-                } else {
-                    result.device.connectGatt(context, false, gattCallback)
+                        // CRITICAL FIX: Forcing TRANSPORT_LE prevents Android trying to pair to the ESP32 as a Classic Bluetooth headset
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            result.device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                        } else {
+                            result.device.connectGatt(context, false, gattCallback)
+                        }
+                    }
+                } catch (e: SecurityException) {
+                    Handler(Looper.getMainLooper()).post { onStatus("Permission Denied reading BLE characteristics!") }
+                } catch (e: Exception) {
+                    Handler(Looper.getMainLooper()).post { onStatus("Error processing scan result") }
                 }
             }
         }
-    }
 
-    scanner.startScan(scanCallback)
-    Handler(Looper.getMainLooper()).postDelayed({
-        if (!isConnecting) {
-            scanner.stopScan(scanCallback)
-            onStatus("Scan Timed Out. Is the robot near?")
-        }
-    }, 10000)
+        scanner.startScan(scanCallback)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!isConnecting) {
+                try { scanner.stopScan(scanCallback) } catch (e: Exception) {}
+                onStatus("Scan Timed Out. Is the robot near?")
+            }
+        }, 10000)
+
+    } catch (e: SecurityException) {
+        onStatus("Bluetooth Permission denied! Please accept prompts or enable in settings.")
+    } catch (e: Exception) {
+        onStatus("Bluetooth Subsystem Error: ${e.message}")
+    }
 }
 
 suspend fun saveImageToGallery(context: Context, ipAddress: String, rotationZ: Int) {
