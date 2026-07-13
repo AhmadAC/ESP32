@@ -57,7 +57,7 @@ fun scanSubnetForWebServers(
 ) {
     val prefix = getLocalWifiSubnetPrefix(context) ?: return onFinished(emptyList())
     scope.launch(Dispatchers.IO) {
-        val sem = Semaphore(40) // Run up to 40 threads simultaneously
+        val sem = Semaphore(40) 
         val foundIps = mutableListOf<String>()
         var completed = 0
 
@@ -93,7 +93,7 @@ suspend fun findRobotViaUDP(): String? = withContext(Dispatchers.IO) {
     var socket: DatagramSocket? = null
     try {
         socket = DatagramSocket(4210)
-        socket.soTimeout = 3000 // Listen for 3 seconds maximum
+        socket.soTimeout = 3000 
         val buffer = ByteArray(256)
         val packet = DatagramPacket(buffer, buffer.size)
         socket.receive(packet)
@@ -177,7 +177,6 @@ fun setupRobotViaBLE(
         val scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 try {
-                    // Safe access block for API 31+ strictly requiring BLUETOOTH_CONNECT merely to read device name
                     val name = try {
                         result.device.name ?: result.scanRecord?.deviceName
                     } catch (e: SecurityException) {
@@ -202,7 +201,6 @@ fun setupRobotViaBLE(
                                     if (newState == BluetoothProfile.STATE_CONNECTED) {
                                         Handler(Looper.getMainLooper()).post { onStatus("Connected. Waiting for services...") }
                                         
-                                        // Delaying discovery bypasses an Android 12+ timing bug where services return completely empty
                                         Handler(Looper.getMainLooper()).postDelayed({
                                             try { gatt.discoverServices() } catch (e: Exception) { }
                                         }, 600)
@@ -251,7 +249,6 @@ fun setupRobotViaBLE(
                                                 if (credsChar != null) {
                                                     val payload = "$ssid,$pass".toByteArray()
                                                     
-                                                    // Compatibility wrapper to circumvent API 33+ parameter deprecation crashes
                                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                                         gatt.writeCharacteristic(credsChar, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
                                                     } else {
@@ -275,16 +272,10 @@ fun setupRobotViaBLE(
                                 }
                             }
 
-                            // -------------------------------------------------------------
-                            // Modern Android 13+ (API 33) signature method implementation
-                            // -------------------------------------------------------------
                             override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
                                 handleIpChanged(characteristic, value, gatt)
                             }
 
-                            // -------------------------------------------------------------
-                            // Backwards compatible method to cover Android 12 and below
-                            // -------------------------------------------------------------
                             @Deprecated("Deprecated in Java")
                             override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
                                 handleIpChanged(characteristic, characteristic.value, gatt)
@@ -306,7 +297,6 @@ fun setupRobotViaBLE(
                             }
                         }
 
-                        // CRITICAL FIX: Forcing TRANSPORT_LE prevents Android trying to pair to the ESP32 as a Classic Bluetooth headset
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             result.device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
                         } else {

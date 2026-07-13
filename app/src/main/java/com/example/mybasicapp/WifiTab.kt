@@ -2,10 +2,17 @@
 package com.example.mybasicapp
 
 import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +44,37 @@ fun WifiTab(
     var isScanning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    
+    // Bluetooth Setup
+    val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    val btAdapter = btManager.adapter
+    
+    var bleSsid by remember { mutableStateOf("") }
+    var blePass by remember { mutableStateOf("") }
+    var bleStatus by remember { mutableStateOf("Ready") }
+
+    // Launcher to prompt the user to turn on Bluetooth if it is disabled
+    val enableBtLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            setupRobotViaBLE(context, bleSsid, blePass, { bleStatus = it }, onBleIpReceived)
+        } else {
+            bleStatus = "Bluetooth must be enabled to provision."
+        }
+    }
+
+    // Launcher to prompt the user for Bluetooth/Location permissions if they were denied/skipped
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
+        val allGranted = perms.values.all { it }
+        if (allGranted) {
+            if (btAdapter?.isEnabled == true) {
+                setupRobotViaBLE(context, bleSsid, blePass, { bleStatus = it }, onBleIpReceived)
+            } else {
+                enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            }
+        } else {
+            bleStatus = "Bluetooth & Location permissions are required."
+        }
+    }
 
     fun getPhoneLocalWifiNetworks(context: Context): List<String> {
         return try {
@@ -50,10 +88,6 @@ fun WifiTab(
     Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
         
         CardContainer(title = "Bluetooth Initial Setup (First Time)") {
-            var bleSsid by remember { mutableStateOf("") }
-            var blePass by remember { mutableStateOf("") }
-            var bleStatus by remember { mutableStateOf("Ready") }
-            
             OutlinedTextField(
                 value = bleSsid,
                 onValueChange = { bleSsid = it },
@@ -79,9 +113,23 @@ fun WifiTab(
             )
             Spacer(modifier = Modifier.height(15.dp))
             HtmlButton("Provision via Bluetooth", BtnPurple, Modifier.fillMaxWidth()) {
-                setupRobotViaBLE(context, bleSsid, blePass, { bleStatus = it }, { ip ->
-                    onBleIpReceived(ip)
-                })
+                val requiredPerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION)
+                } else {
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+                }
+
+                val hasPerms = requiredPerms.all {
+                    ActivityCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                }
+
+                if (!hasPerms) {
+                    permissionLauncher.launch(requiredPerms)
+                } else if (btAdapter?.isEnabled == false) {
+                    enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+                } else {
+                    setupRobotViaBLE(context, bleSsid, blePass, { bleStatus = it }, onBleIpReceived)
+                }
             }
             Text("Status: $bleStatus", color = TextColor, modifier = Modifier.padding(top=10.dp))
         }

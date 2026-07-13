@@ -35,7 +35,11 @@ class MainActivity : ComponentActivity() {
             hasBluetoothPermission = permissions[Manifest.permission.BLUETOOTH_CONNECT] ?: hasBluetoothPermission
         }
 
-        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val permissions = mutableListOf(
+            Manifest.permission.RECORD_AUDIO, 
+            Manifest.permission.ACCESS_FINE_LOCATION, 
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -76,7 +80,11 @@ class MainActivity : ComponentActivity() {
             .setAutoCancel(true)
 
         with(NotificationManagerCompat.from(this)) {
-            try { notify(System.currentTimeMillis().toInt(), builder.build()) } catch (e: SecurityException) {}
+            try { 
+                notify(System.currentTimeMillis().toInt(), builder.build()) 
+            } catch (e: SecurityException) {
+                // Handled gracefully if notification permissions are absent
+            }
         }
     }
 }
