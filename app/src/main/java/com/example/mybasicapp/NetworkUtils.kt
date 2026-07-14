@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -158,6 +159,14 @@ fun setupRobotViaBLE(
     onIpReceived: (String) -> Unit
 ) {
     try {
+        // CRITICAL CHECK: Verify system Location Services (GPS) is actively enabled 
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val isGpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+        if (!isGpsEnabled) {
+            onStatus("Disabled: Please turn ON system Location/GPS!")
+            return
+        }
+
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val adapter = manager.adapter
         if (adapter == null || !adapter.isEnabled) {
@@ -171,7 +180,7 @@ fun setupRobotViaBLE(
             return
         }
 
-        onStatus("Scanning for ESPRobot...")
+        onStatus("Scanning... (Confirm GPS is ON)")
         var isConnecting = false
 
         val scanCallback = object : ScanCallback() {
@@ -311,7 +320,13 @@ fun setupRobotViaBLE(
             }
         }
 
-        scanner.startScan(scanCallback)
+        // Configure ScanSettings to operate in High Power / Low Latency mode
+        val scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        scanner.startScan(null, scanSettings, scanCallback)
+        
         Handler(Looper.getMainLooper()).postDelayed({
             if (!isConnecting) {
                 try { scanner.stopScan(scanCallback) } catch (e: Exception) {}
