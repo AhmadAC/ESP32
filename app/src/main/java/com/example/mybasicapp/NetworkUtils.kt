@@ -182,6 +182,7 @@ fun setupRobotViaBLE(
 
         onStatus("Scanning... (Confirm GPS is ON)")
         var isConnecting = false
+        var isPollingIp = false
 
         val scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -201,6 +202,7 @@ fun setupRobotViaBLE(
                             override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                                 try {
                                     if (status != BluetoothGatt.GATT_SUCCESS) {
+                                        isPollingIp = false
                                         Handler(Looper.getMainLooper()).post { onStatus("GATT Error $status. Retrying...") }
                                         try { gatt.close() } catch (e: Exception) {}
                                         isConnecting = false
@@ -215,6 +217,7 @@ fun setupRobotViaBLE(
                                         }, 600)
                                         
                                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                                        isPollingIp = false
                                         if (isConnecting) {
                                             Handler(Looper.getMainLooper()).post { onStatus("Disconnected from robot.") }
                                         }
@@ -238,6 +241,7 @@ fun setupRobotViaBLE(
                                     if (service != null) {
                                         Handler(Looper.getMainLooper()).post { onStatus("Subscribing to IP Updates...") }
                                         val ipChar = service.getCharacteristic(ipUuid)
+                                        
                                         if (ipChar != null) {
                                             gatt.setCharacteristicNotification(ipChar, true)
                                             
@@ -246,6 +250,26 @@ fun setupRobotViaBLE(
                                                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                                                 try { gatt.writeDescriptor(desc) } catch (e: Exception) {}
                                             }
+                                            
+                                            // Start Polling loop to ensure we receive the IP even if Android misses the notification packet
+                                            isPollingIp = true
+                                            Thread {
+                                                while (isPollingIp && isConnecting) {
+                                                    Thread.sleep(1500)
+                                                    try { gatt.readCharacteristic(ipChar) } catch (e: Exception) {}
+                                                }
+                                            }.start()
+                                            
+                                            // Safety timeout for Wi-Fi connection
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                if (isPollingIp && isConnecting) {
+                                                    isPollingIp = false
+                                                    isConnecting = false
+                                                    Handler(Looper.getMainLooper()).post { onStatus("Timeout waiting for Wi-Fi IP") }
+                                                    try { gatt.disconnect() } catch (e: Exception) {}
+                                                }
+                                            }, 25000)
+                                            
                                         } else {
                                             Handler(Looper.getMainLooper()).post { onStatus("Warning: IP Characteristic missing") }
                                         }
@@ -290,11 +314,25 @@ fun setupRobotViaBLE(
                                 handleIpChanged(characteristic, characteristic.value, gatt)
                             }
 
+                            override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+                                if (status == BluetoothGatt.GATT_SUCCESS) {
+                                    handleIpChanged(characteristic, value, gatt)
+                                }
+                            }
+
+                            @Deprecated("Deprecated in Java")
+                            override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+                                if (status == BluetoothGatt.GATT_SUCCESS) {
+                                    handleIpChanged(characteristic, characteristic.value, gatt)
+                                }
+                            }
+
                             private fun handleIpChanged(characteristic: BluetoothGattCharacteristic, value: ByteArray?, gatt: BluetoothGatt) {
                                 if (value == null) return
                                 if (characteristic.uuid == UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")) {
-                                    val ip = String(value)
-                                    if (ip != "0.0.0.0") {
+                                    val ip = String(value).replace("\u0000", "").trim()
+                                    if (ip != "0.0.0.0" && ip.isNotEmpty()) {
+                                        isPollingIp = false
                                         Handler(Looper.getMainLooper()).post {
                                             onStatus("Connected to Wi-Fi!")
                                             onIpReceived(ip)
