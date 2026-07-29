@@ -1,10 +1,14 @@
 // app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
+import android.app.Activity
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -38,6 +42,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var isPolling by remember { mutableStateOf(false) }
     var isBleConnected by remember { mutableStateOf(false) }
     var bleStatusText by remember { mutableStateOf("BLE Idle") }
+    var isStealthMode by remember { mutableStateOf(false) }
     
     val isOnline = isPolling || isBleConnected
 
@@ -196,276 +201,304 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val pagerState = rememberPagerState(pageCount = { 4 })
     val tabs = listOf("Wi-Fi Setup", "Robot & Audio", "Claw", "Camera")
 
-    Column(modifier = Modifier.fillMaxSize().background(BgColor)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.weight(1f)) {
-                OutlinedTextField(
-                    value = ipAddress,
-                    onValueChange = { ipAddress = it },
-                    label = { Text("ESP32 IP", color = PrimaryColor) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
-                        focusedTextColor = TextColor, unfocusedTextColor = TextColor
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                DropdownMenu(
-                    expanded = ipsDropdownExpanded,
-                    onDismissRequest = { ipsDropdownExpanded = false },
-                    modifier = Modifier.background(CardColor)
-                ) {
-                    discoveredIps.forEach { ip ->
-                        DropdownMenuItem(
-                            text = { Text(ip, color = TextColor, fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                ipAddress = ip
-                                ipsDropdownExpanded = false
-                                isPolling = true 
-                                Toast.makeText(context, "Connecting to $ip", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            HtmlButton(
-                text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find Robot",
-                color = if (isScanningSubnet) BtnOrange else BtnPurple,
-                modifier = Modifier.width(90.dp)
+    Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!isScanningSubnet) {
-                    isScanningSubnet = true
-                    scope.launch {
-                        val udpIp = findRobotViaUDP()
-                        if (udpIp != null) {
-                            ipAddress = udpIp
-                            isPolling = true
-                            Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
-                            isScanningSubnet = false
-                            return@launch
-                        }
-
-                        var mdnsFound = false
-                        findRobotViaMDNS(context) { mdnsIp ->
-                            if (!mdnsFound) {
-                                mdnsFound = true
-                                ipAddress = mdnsIp
-                                isPolling = true
-                                Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
-                                isScanningSubnet = false
-                            }
-                        }
-                        delay(4000) 
-
-                        if (!mdnsFound && isScanningSubnet) {
-                            scanSubnetForWebServers(
-                                context = context,
-                                scope = scope,
-                                onProgress = { progress -> subnetProgress = progress },
-                                onFinished = { foundIps ->
-                                    isScanningSubnet = false
-                                    if (foundIps.isNotEmpty()) {
-                                        discoveredIps = foundIps
-                                        ipsDropdownExpanded = true
-                                        Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
-                                    }
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = ipAddress,
+                        onValueChange = { ipAddress = it },
+                        label = { Text("ESP32 IP", color = PrimaryColor) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
+                            focusedTextColor = TextColor, unfocusedTextColor = TextColor
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    DropdownMenu(
+                        expanded = ipsDropdownExpanded,
+                        onDismissRequest = { ipsDropdownExpanded = false },
+                        modifier = Modifier.background(CardColor)
+                    ) {
+                        discoveredIps.forEach { ip ->
+                            DropdownMenuItem(
+                                text = { Text(ip, color = TextColor, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    ipAddress = ip
+                                    ipsDropdownExpanded = false
+                                    isPolling = true 
+                                    Toast.makeText(context, "Connecting to $ip", Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }
                     }
                 }
-            }
-            Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                
+                HtmlButton(
+                    text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find",
+                    color = if (isScanningSubnet) BtnOrange else BtnPurple,
+                    modifier = Modifier.width(65.dp)
+                ) {
+                    if (!isScanningSubnet) {
+                        isScanningSubnet = true
+                        scope.launch {
+                            val udpIp = findRobotViaUDP()
+                            if (udpIp != null) {
+                                ipAddress = udpIp
+                                isPolling = true
+                                Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
+                                isScanningSubnet = false
+                                return@launch
+                            }
 
-            HtmlButton(
-                text = if (isBleConnected) "BLE On" else "BLE",
-                color = if (isBleConnected) BtnPurple else BtnGray,
-                modifier = Modifier.width(70.dp)
+                            var mdnsFound = false
+                            findRobotViaMDNS(context) { mdnsIp ->
+                                if (!mdnsFound) {
+                                    mdnsFound = true
+                                    ipAddress = mdnsIp
+                                    isPolling = true
+                                    Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
+                                    isScanningSubnet = false
+                                }
+                            }
+                            delay(4000) 
+
+                            if (!mdnsFound && isScanningSubnet) {
+                                scanSubnetForWebServers(
+                                    context = context,
+                                    scope = scope,
+                                    onProgress = { progress -> subnetProgress = progress },
+                                    onFinished = { foundIps ->
+                                        isScanningSubnet = false
+                                        if (foundIps.isNotEmpty()) {
+                                            discoveredIps = foundIps
+                                            ipsDropdownExpanded = true
+                                            Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+
+                HtmlButton(
+                    text = if (isBleConnected) "BLE On" else "BLE",
+                    color = if (isBleConnected) BtnPurple else BtnGray,
+                    modifier = Modifier.width(65.dp)
+                ) {
+                    if (isBleConnected) {
+                        RobotBleController.disconnect()
+                        isBleConnected = false
+                        bleStatusText = "BLE Disconnected"
+                    } else {
+                        RobotBleController.connectToRobot(
+                            context = context,
+                            onStatus = { status -> bleStatusText = status },
+                            onConnectedStateChange = { connected -> isBleConnected = connected }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                HtmlButton(
+                    text = "Stealth",
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier.width(65.dp)
+                ) {
+                    isStealthMode = true
+                    (context as? Activity)?.window?.attributes = (context as? Activity)?.window?.attributes?.apply {
+                        screenBrightness = 0.01f
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 15.dp, vertical = 5.dp)
+                    .background(if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03), RoundedCornerShape(10.dp))
+                    .border(width = 1.dp, color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B), shape = RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isBleConnected) {
-                    RobotBleController.disconnect()
-                    isBleConnected = false
-                    bleStatusText = "BLE Disconnected"
-                } else {
-                    RobotBleController.connectToRobot(
-                        context = context,
-                        onStatus = { status -> bleStatusText = status },
-                        onConnectedStateChange = { connected -> isBleConnected = connected }
+                Box(modifier = Modifier.size(10.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = when {
+                        isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
+                        isBleConnected -> "Connected [Online (BLE + Gamepad Active)]"
+                        isPolling -> "Connected [Online (Wi-Fi HTTP)]"
+                        else -> "Searching for ESP Robot [Offline]"
+                    },
+                    color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = CardColor,
+                contentColor = PrimaryColor,
+                divider = { HorizontalDivider(color = PrimaryColor) }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(6.dp))
-            
-            HtmlButton(
-                text = if (isPolling) "HTTP Off" else "HTTP",
-                color = if (isPolling) BtnRed else BtnGreen,
-                modifier = Modifier.width(80.dp)
-            ) {
-                isPolling = !isPolling
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 15.dp, vertical = 5.dp)
-                .background(if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03), RoundedCornerShape(10.dp))
-                .border(width = 1.dp, color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B), shape = RoundedCornerShape(10.dp))
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.size(10.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = when {
-                    isPolling && isBleConnected -> "Connected to ESP Robot [Online (Wi-Fi + BLE)]"
-                    isBleConnected -> "Connected to ESP Robot [Online (Bluetooth BLE + Gamepad Active)]"
-                    isPolling -> "Connected to ESP Robot [Online (Wi-Fi HTTP)]"
-                    else -> "Searching for ESP Robot [Offline]"
-                },
-                color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
-            )
-        }
-
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = CardColor,
-            contentColor = PrimaryColor,
-            divider = { HorizontalDivider(color = PrimaryColor) }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    text = { Text(title, color = if (pagerState.currentPage == index) PrimaryColor else BtnGray, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-                )
-            }
-        }
-
-        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
-            when (page) {
-                0 -> WifiTab(
-                    ipAddress = ipAddress,
-                    hasLocationPermission = hasLocationPermission,
-                    onSaveWifi = { ssid, pass -> 
-                        dispatchCommand("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
-                    },
-                    onForceAp = { dispatchCommand("/switch_to_ap", JSONObject()) },
-                    onUseWifi = { dispatchCommand("/switch_to_wifi", JSONObject()) },
-                    onBleIpReceived = { ip -> 
-                        ipAddress = ip
-                        isPolling = true
-                    }
-                )
-                1 -> RobotTab(
-                    ipAddress = ipAddress,
-                    sensorEnabled = sensorEnabled,
-                    safetyLock = safetyLock,
-                    sensorDistance = sensorDistance,
-                    notifyOnTrip = notifyOnTrip,
-                    trippedAction = trippedAction,
-                    clearedAction = clearedAction,
-                    trippedAudio = trippedAudio,
-                    clearedAudio = clearedAudio,
-                    audioVolume = audioVolume,
-                    syncEnabled = syncEnabled,
-                    llAngle = llAngle,
-                    hlAngle = hlAngle,
-                    lrAngle = lrAngle,
-                    hrAngle = hrAngle,
-                    hasAudioPermission = hasAudioPermission,
-                    onNotifyToggle = { notifyOnTrip = it },
-                    onSyncToggle = { syncEnabled = it },
-                    onSliderChanged = { id, angle ->
-                        activeDrag = id
-                        val payload = JSONObject()
-                        when (id) {
-                            "ll" -> { 
-                                llAngle = angle
-                                payload.put("ll", angle.toInt())
-                                if (syncEnabled) { 
-                                    lrAngle = angle
-                                    payload.put("lr", angle.toInt()) 
-                                } 
-                            }
-                            "hl" -> { 
-                                hlAngle = angle
-                                payload.put("hl", angle.toInt())
-                                if (syncEnabled) { 
-                                    hrAngle = angle
-                                    payload.put("hr", angle.toInt()) 
-                                } 
-                            }
-                            "lr" -> { 
-                                lrAngle = angle
-                                payload.put("lr", angle.toInt())
-                                if (syncEnabled) { 
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                when (page) {
+                    0 -> WifiTab(
+                        ipAddress = ipAddress,
+                        hasLocationPermission = hasLocationPermission,
+                        onSaveWifi = { ssid, pass -> 
+                            dispatchCommand("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
+                        },
+                        onForceAp = { dispatchCommand("/switch_to_ap", JSONObject()) },
+                        onUseWifi = { dispatchCommand("/switch_to_wifi", JSONObject()) },
+                        onBleIpReceived = { ip -> 
+                            ipAddress = ip
+                            isPolling = true
+                        }
+                    )
+                    1 -> RobotTab(
+                        ipAddress = ipAddress,
+                        sensorEnabled = sensorEnabled,
+                        safetyLock = safetyLock,
+                        sensorDistance = sensorDistance,
+                        notifyOnTrip = notifyOnTrip,
+                        trippedAction = trippedAction,
+                        clearedAction = clearedAction,
+                        trippedAudio = trippedAudio,
+                        clearedAudio = clearedAudio,
+                        audioVolume = audioVolume,
+                        syncEnabled = syncEnabled,
+                        llAngle = llAngle,
+                        hlAngle = hlAngle,
+                        lrAngle = lrAngle,
+                        hrAngle = hrAngle,
+                        hasAudioPermission = hasAudioPermission,
+                        onNotifyToggle = { notifyOnTrip = it },
+                        onSyncToggle = { syncEnabled = it },
+                        onSliderChanged = { id, angle ->
+                            activeDrag = id
+                            val payload = JSONObject()
+                            when (id) {
+                                "ll" -> { 
                                     llAngle = angle
-                                    payload.put("ll", angle.toInt()) 
-                                } 
-                            }
-                            "hr" -> { 
-                                hrAngle = angle
-                                payload.put("hr", angle.toInt())
-                                if (syncEnabled) { 
+                                    payload.put("ll", angle.toInt())
+                                    if (syncEnabled) { 
+                                        lrAngle = angle
+                                        payload.put("lr", angle.toInt()) 
+                                    } 
+                                }
+                                "hl" -> { 
                                     hlAngle = angle
-                                    payload.put("hl", angle.toInt()) 
-                                } 
+                                    payload.put("hl", angle.toInt())
+                                    if (syncEnabled) { 
+                                        hrAngle = angle
+                                        payload.put("hr", angle.toInt()) 
+                                    } 
+                                }
+                                "lr" -> { 
+                                    lrAngle = angle
+                                    payload.put("lr", angle.toInt())
+                                    if (syncEnabled) { 
+                                        llAngle = angle
+                                        payload.put("ll", angle.toInt()) 
+                                    } 
+                                }
+                                "hr" -> { 
+                                    hrAngle = angle
+                                    payload.put("hr", angle.toInt())
+                                    if (syncEnabled) { 
+                                        hlAngle = angle
+                                        payload.put("hl", angle.toInt()) 
+                                    } 
+                                }
                             }
+                            pendingServoPayload = payload
+                        },
+                        onSliderChangeFinished = { activeDrag = null },
+                        onSensorConfigUpdate = { tAction, cAction, tAudio, cAudio, enabled ->
+                            val json = JSONObject().apply {
+                                put("enabled", enabled)
+                                put("tripped_action", tAction)
+                                put("cleared_action", cAction)
+                                put("tripped_audio", tAudio)
+                                put("cleared_audio", cAudio)
+                            }
+                            dispatchCommand("/sensor", json)
+                            trippedAction = tAction
+                            clearedAction = cAction
+                            trippedAudio = tAudio
+                            clearedAudio = cAudio
+                            sensorEnabled = enabled
+                        },
+                        onRobotAction = { act ->
+                            dispatchCommand(act)
+                        },
+                        onAudioCommand = { endpoint, payload -> dispatchCommand(endpoint, payload) },
+                        onWalkieTalkie = {
+                            Toast.makeText(context, "Mic Transmitting to Robot...", Toast.LENGTH_SHORT).show()
                         }
-                        pendingServoPayload = payload
-                    },
-                    onSliderChangeFinished = { activeDrag = null },
-                    onSensorConfigUpdate = { tAction, cAction, tAudio, cAudio, enabled ->
-                        val json = JSONObject().apply {
-                            put("enabled", enabled)
-                            put("tripped_action", tAction)
-                            put("cleared_action", cAction)
-                            put("tripped_audio", tAudio)
-                            put("cleared_audio", cAudio)
+                    )
+                    2 -> ClawTab(
+                        onClawCommand = { cmd -> 
+                            if (RobotBleController.isConnected) {
+                                RobotBleController.sendBleCommand("claw:$cmd")
+                            }
+                            sendGetRequest("/claw?cmd=$cmd") 
+                        },
+                        onClawAngle = { angle -> 
+                            if (RobotBleController.isConnected) {
+                                RobotBleController.sendBleCommand("claw_angle:$angle")
+                            }
+                            sendGetRequest("/claw?angle=$angle") 
                         }
-                        dispatchCommand("/sensor", json)
-                        trippedAction = tAction
-                        clearedAction = cAction
-                        trippedAudio = tAudio
-                        clearedAudio = cAudio
-                        sensorEnabled = enabled
-                    },
-                    onRobotAction = { act ->
-                        dispatchCommand(act)
-                    },
-                    onAudioCommand = { endpoint, payload -> dispatchCommand(endpoint, payload) },
-                    onWalkieTalkie = {
-                        Toast.makeText(context, "Mic Transmitting to Robot...", Toast.LENGTH_SHORT).show()
-                    }
-                )
-                2 -> ClawTab(
-                    onClawCommand = { cmd -> 
-                        if (RobotBleController.isConnected) {
-                            RobotBleController.sendBleCommand("claw:$cmd")
+                    )
+                    3 -> CameraTab(
+                        ipAddress = ipAddress,
+                        onFlipCamera = { dispatchCommand("/cam_flip", JSONObject()) }
+                    )
+                }
+            }
+        }
+
+        // Pure OLED Black Screen Overlay for 0mW Stealth Mode
+        if (isStealthMode) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable {
+                        isStealthMode = false
+                        (context as? Activity)?.window?.attributes = (context as? Activity)?.window?.attributes?.apply {
+                            screenBrightness = -1f // Restore default brightness
                         }
-                        sendGetRequest("/claw?cmd=$cmd") 
                     },
-                    onClawAngle = { angle -> 
-                        if (RobotBleController.isConnected) {
-                            RobotBleController.sendBleCommand("claw_angle:$angle")
-                        }
-                        sendGetRequest("/claw?angle=$angle") 
-                    }
-                )
-                3 -> CameraTab(
-                    ipAddress = ipAddress,
-                    onFlipCamera = { dispatchCommand("/cam_flip", JSONObject()) }
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Stealth Mode Active\n(Gamepads Active - Tap 2x to Wake)",
+                    color = Color(0xFF334155),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

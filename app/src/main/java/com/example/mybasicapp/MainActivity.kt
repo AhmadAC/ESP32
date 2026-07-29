@@ -8,9 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +56,7 @@ class MainActivity : ComponentActivity() {
             hasBluetoothPermission = permissions[Manifest.permission.BLUETOOTH_CONNECT] ?: hasBluetoothPermission
             
             startGamepadService()
+            checkAccessibilityPrompt()
         }
 
         val permissions = mutableListOf(
@@ -80,6 +83,16 @@ class MainActivity : ComponentActivity() {
                     if (hasNotificationPermission) sendNotification("ESP32 Sensor Alert", msg)
                 }
             )
+        }
+    }
+
+    private fun checkAccessibilityPrompt() {
+        if (!GamepadAccessibilityService.isServiceEnabled) {
+            Toast.makeText(
+                this,
+                "Optional: Enable Accessibility Service for Global Screen-Off Gamepad Control",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -173,13 +186,11 @@ class MainActivity : ComponentActivity() {
             val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
             val axisX = event.getAxisValue(MotionEvent.AXIS_X)
-            val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
+            val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
 
-            // Smooth Analog Joystick Control for Claw Angle (0 to 180 degrees)
             val mappedAngle = (((1.0f - axisY) / 2.0f) * 180f).toInt().coerceIn(0, 180)
             val currentTime = System.currentTimeMillis()
 
-            // Rate-limited transmission (max 25Hz / 40ms interval) to prevent BLE buffer drops
             if (Math.abs(mappedAngle - lastClawAngle) >= 3 || (currentTime - lastBleTransmitTime) >= 40) {
                 if (mappedAngle != lastClawAngle) {
                     lastClawAngle = mappedAngle

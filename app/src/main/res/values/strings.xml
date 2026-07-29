@@ -18,14 +18,15 @@
     <string name="decibel_format">%d dB</string>
     <string name="decibel_format_precise">%.1f dB</string>
 
-
     <!-- MainActivity & Global -->
     <string name="save_activity_log_button">Save Activity Log</string>
-    <!-- Tab Titles for ViewPager -->
     <string name="tab_title_home">Home</string>
     <string name="tab_title_noise_config">Noise ESP</string>
     <string name="tab_title_esp_system_config">ESP System</string>
     <string name="tab_title_devices">Devices</string>
+
+    <!-- Accessibility Service Description -->
+    <string name="accessibility_service_description">Intercepts Nintendo Switch Controller buttons globally so you can control your robot/claw even when your phone screen is locked or turned off.</string>
 
     <!-- HomeFragment Strings -->
     <string name="home_status_no_active_esp">Home (No Active ESP)</string>
@@ -44,7 +45,6 @@
     <string name="no_active_esp_selected_toast">No active ESP selected.</string>
     <string name="esp_address_not_set_toast">ESP Address not set.</string>
     <string name="custom_alert_sound_section_title">App Alert Sound</string>
-
 
     <!-- NoiseSettingsFragment Strings -->
     <string name="noise_settings_title_esp">ESP Noise Threshold Setting</string>
@@ -69,7 +69,6 @@
     <string name="status_invalid_format">Invalid format.</string>
     <string name="status_fetched_successfully">Config fetched.</string>
 
-
     <!-- EspConfigFragment Strings -->
     <string name="esp_system_config_title">ESP System Configuration</string>
     <string name="fetch_current_config_from_esp_button">Fetch Current Config from ESP</string>
@@ -82,7 +81,7 @@
     <string name="wifi_password_hint">WiFi Password</string>
     <string name="set_wifi_config_button">Set ESP WiFi Config</string>
     <string name="wifi_config_note_esp_reboot">Note: ESP may need to reboot or its IP may change to apply new WiFi settings. Re-scan or re-select device if needed.</string>
-    <string name="status_config_loaded_at">Config loaded at: %s</string> <!-- Placeholder for timestamp, not implemented yet -->
+    <string name="status_config_loaded_at">Config loaded at: %s</string>
     <string name="status_config_fetched_ok">ESP config fetched successfully.</string>
     <string name="status_setting_calibration">Setting calibration offset on ESP…</string>
     <string name="status_calibration_set_success">ESP calibration offset set. Refreshing config…</string>
@@ -92,7 +91,6 @@
     <string name="invalid_offset_format_prompt">Invalid number format for offset.</string>
     <string name="enter_wifi_ssid_prompt">Please enter WiFi SSID.</string>
     <string name="esp_reboot_may_be_needed_wifi">ESP may need to reboot to apply WiFi changes.</string>
-
 
     <!-- DeviceManagementFragment Strings -->
     <string name="device_management_title">Manage ESP Devices</string>
@@ -131,19 +129,13 @@
     <string name="edit_device_content_description">Edit ESP Device</string>
     <string name="delete_device_content_description">Delete ESP Device</string>
 
-
-    <!-- HttpPollingService & AlertSoundService related (Notifications, Channels) -->
-    <!-- Existing from your file, with additions/renames for clarity -->
-    <string name="channel_name_http_service_status">ESP32 HTTP Service Status</string> <!-- For foreground service -->
-    <string name="http_polling_service_channel_name">ESP32 HTTP Polling Service</string> <!-- More specific name -->
+    <string name="channel_name_http_service_status">ESP32 HTTP Service Status</string>
+    <string name="http_polling_service_channel_name">ESP32 HTTP Polling Service</string>
     <string name="http_polling_service_channel_desc">Status notifications for the ESP32 HTTP Polling background service.</string>
-
-    <string name="channel_name_http_alerts">ESP32 Data Alerts</string> <!-- For data-triggered notifications -->
+    <string name="channel_name_http_alerts">ESP32 Data Alerts</string>
     <string name="channel_description_http_alerts">Notifications for data alerts (e.g., loud noise) from ESP32 devices.</string>
+    <string name="http_sync_notification_title_suffix">HTTP Sync</string>
 
-    <string name="http_sync_notification_title_suffix">HTTP Sync</string> <!-- Suffix for service notification title -->
-
-    <!-- Custom Sound Alert Feature (some were already in your file) -->
     <string name="select_custom_alert_sound">Select Custom Alert Sound</string>
     <string name="test_custom_alert_sound">Test Custom Alert</string>
     <string name="enable_custom_alert_sound_switch">Enable Custom Alert Sound</string>
@@ -158,17 +150,10 @@
     <string name="custom_sound_no_longer_accessible_toast">Previously selected custom sound is no longer accessible. Please select again.</string>
     <string name="storage_permission_required_toast">Storage permission is required to select a sound file.</string>
 
-    <string name="alert_sound_service_channel_name">Custom Alert Sound Playback</string> <!-- Channel for AlertSoundService's own FG notification -->
+    <string name="alert_sound_service_channel_name">Custom Alert Sound Playback</string>
     <string name="alert_sound_service_channel_description">Indicates when a custom alert sound is actively playing.</string>
     <string name="alert_sound_notification_title">Playing Alert Sound</string>
     <string name="alert_sound_notification_text">A custom alert sound is currently playing.</string>
 
-    <string name="log_sensor_trigger_file_name">esp32_sensor_triggers.log</string> <!-- For logging triggers -->
-
-    <!-- Old strings, review if still needed or can be removed/merged -->
-    <!-- <string name="channel_name">ESP32 Notifications</string> -->
-    <!-- <string name="channel_description">Notifications received from the local ESP32 device.</string> -->
-    <!-- <string name="channel_name_http">ESP32 HTTP Data</string> --> <!-- Replaced by channel_name_http_alerts for clarity -->
-    <!-- <string name="channel_description_http">Notifications for data polled from ESP32 via HTTP.</string> --> <!-- Replaced -->
-
+    <string name="log_sensor_trigger_file_name">esp32_sensor_triggers.log</string>
 </resources>
