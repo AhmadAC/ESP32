@@ -11,10 +11,39 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun ClawTab(
+    currentMode: String,
     onClawCommand: (String) -> Unit,
-    onClawAngle: (Int) -> Unit
+    onClawAngle: (Int) -> Unit,
+    onSwitchMode: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(15.dp).verticalScroll(rememberScrollState())) {
+        
+        // Mode Profile Selector Card
+        CardContainer(title = "Device Mode Profile") {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                val isClawActive = currentMode.equals("claw", ignoreCase = true)
+                HtmlButton(
+                    text = if (isClawActive) "✓ Activate Claw Mode" else "Activate Claw Mode",
+                    color = if (isClawActive) BtnGreen else BtnGray,
+                    modifier = Modifier.weight(1f).padding(end = 4.dp)
+                ) {
+                    onSwitchMode("claw")
+                }
+
+                val isRobotActive = currentMode.equals("robot", ignoreCase = true)
+                HtmlButton(
+                    text = if (isRobotActive) "✓ Activate Robot Mode" else "Activate Robot Mode",
+                    color = if (isRobotActive) BtnGreen else BtnGray,
+                    modifier = Modifier.weight(1f).padding(start = 4.dp)
+                ) {
+                    onSwitchMode("robot")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(15.dp))
+
+        // Claw Motion Controls Card
         CardContainer(title = "Claw Controls") {
             Row(modifier = Modifier.fillMaxWidth()) {
                 HtmlButton("Open (180)", BtnGreen, Modifier.weight(1f).padding(4.dp)) { onClawCommand("open") }

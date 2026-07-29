@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var isBleConnected by remember { mutableStateOf(false) }
     var bleStatusText by remember { mutableStateOf("BLE Idle") }
     var isStealthMode by remember { mutableStateOf(false) }
+    var currentDevMode by remember { mutableStateOf("robot") } // "robot" or "claw"
     
     val isOnline = isPolling || isBleConnected
 
@@ -201,15 +203,21 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
 
     Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
         Column(modifier = Modifier.fillMaxSize()) {
+            
+            // Header Bar with Compact Single-Line Fitting Buttons
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Box(modifier = Modifier.weight(1f)) {
+                Box(modifier = Modifier.weight(1.3f)) {
                     OutlinedTextField(
                         value = ipAddress,
                         onValueChange = { ipAddress = it },
-                        label = { Text("ESP32 IP", color = PrimaryColor) },
+                        label = { Text("ESP32 IP", color = PrimaryColor, fontSize = 10.sp) },
+                        singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = PrimaryColor, unfocusedBorderColor = BtnGray,
                             focusedTextColor = TextColor, unfocusedTextColor = TextColor
@@ -235,102 +243,157 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         }
                     }
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                
-                HtmlButton(
-                    text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find",
-                    color = if (isScanningSubnet) BtnOrange else BtnPurple,
-                    modifier = Modifier.width(65.dp)
-                ) {
-                    if (!isScanningSubnet) {
-                        isScanningSubnet = true
-                        scope.launch {
-                            val udpIp = findRobotViaUDP()
-                            if (udpIp != null) {
-                                ipAddress = udpIp
-                                isPolling = true
-                                Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
-                                isScanningSubnet = false
-                                return@launch
-                            }
 
-                            var mdnsFound = false
-                            findRobotViaMDNS(context) { mdnsIp ->
-                                if (!mdnsFound) {
-                                    mdnsFound = true
-                                    ipAddress = mdnsIp
+                // Compact Single-Line Button: Find
+                Button(
+                    onClick = {
+                        if (!isScanningSubnet) {
+                            isScanningSubnet = true
+                            scope.launch {
+                                val udpIp = findRobotViaUDP()
+                                if (udpIp != null) {
+                                    ipAddress = udpIp
                                     isPolling = true
-                                    Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
                                     isScanningSubnet = false
+                                    return@launch
+                                }
+
+                                var mdnsFound = false
+                                findRobotViaMDNS(context) { mdnsIp ->
+                                    if (!mdnsFound) {
+                                        mdnsFound = true
+                                        ipAddress = mdnsIp
+                                        isPolling = true
+                                        Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
+                                        isScanningSubnet = false
+                                    }
+                                }
+                                delay(4000) 
+
+                                if (!mdnsFound && isScanningSubnet) {
+                                    scanSubnetForWebServers(
+                                        context = context,
+                                        scope = scope,
+                                        onProgress = { progress -> subnetProgress = progress },
+                                        onFinished = { foundIps ->
+                                            isScanningSubnet = false
+                                            if (foundIps.isNotEmpty()) {
+                                                discoveredIps = foundIps
+                                                ipsDropdownExpanded = true
+                                                Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    )
                                 }
                             }
-                            delay(4000) 
-
-                            if (!mdnsFound && isScanningSubnet) {
-                                scanSubnetForWebServers(
-                                    context = context,
-                                    scope = scope,
-                                    onProgress = { progress -> subnetProgress = progress },
-                                    onFinished = { foundIps ->
-                                        isScanningSubnet = false
-                                        if (foundIps.isNotEmpty()) {
-                                            discoveredIps = foundIps
-                                            ipsDropdownExpanded = true
-                                            Toast.makeText(context, "Select an IP from the list!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "No devices found on the network.", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                )
-                            }
                         }
-                    }
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-
-                HtmlButton(
-                    text = if (isBleConnected) "BLE On" else "BLE",
-                    color = if (isBleConnected) BtnPurple else BtnGray,
-                    modifier = Modifier.width(65.dp)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isScanningSubnet) BtnOrange else BtnPurple),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                    modifier = Modifier.weight(0.8f).height(48.dp)
                 ) {
-                    if (isBleConnected) {
-                        RobotBleController.disconnect()
-                        isBleConnected = false
-                        bleStatusText = "BLE Disconnected"
-                    } else {
-                        RobotBleController.connectToRobot(
-                            context = context,
-                            onStatus = { status -> bleStatusText = status },
-                            onConnectedStateChange = { connected -> isBleConnected = connected }
-                        )
-                    }
+                    Text(
+                        text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
-
-                HtmlButton(
-                    text = "Stealth",
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.width(65.dp)
+                // Compact Single-Line Button: BLE
+                Button(
+                    onClick = {
+                        if (isBleConnected) {
+                            RobotBleController.disconnect()
+                            isBleConnected = false
+                            bleStatusText = "BLE Disconnected"
+                        } else {
+                            RobotBleController.connectToRobot(
+                                context = context,
+                                onStatus = { status -> bleStatusText = status },
+                                onConnectedStateChange = { connected -> isBleConnected = connected }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isBleConnected) BtnPurple else BtnGray),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                    modifier = Modifier.weight(0.8f).height(48.dp)
                 ) {
-                    isStealthMode = true
-                    (context as? Activity)?.window?.attributes = (context as? Activity)?.window?.attributes?.apply {
-                        screenBrightness = 0.01f
-                    }
+                    Text(
+                        text = if (isBleConnected) "BLE On" else "BLE",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Compact Single-Line Button: HTTP
+                Button(
+                    onClick = { isPolling = !isPolling },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isPolling) BtnRed else BtnGreen),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                    modifier = Modifier.weight(0.8f).height(48.dp)
+                ) {
+                    Text(
+                        text = if (isPolling) "HTTP On" else "HTTP",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Compact Single-Line Button: Stealth
+                Button(
+                    onClick = {
+                        isStealthMode = true
+                        (context as? Activity)?.window?.attributes = (context as? Activity)?.window?.attributes?.apply {
+                            screenBrightness = 0.01f
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                    modifier = Modifier.weight(0.9f).height(48.dp)
+                ) {
+                    Text(
+                        text = "Stealth",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
+            // Status Indicator Banner
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 15.dp, vertical = 5.dp)
-                    .background(if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03), RoundedCornerShape(10.dp))
-                    .border(width = 1.dp, color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B), shape = RoundedCornerShape(10.dp))
-                    .padding(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .background(if (isOnline) Color(0xFF064E3B) else Color(0xFF451A03), RoundedCornerShape(8.dp))
+                    .border(width = 1.dp, color = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B), shape = RoundedCornerShape(8.dp))
+                    .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(modifier = Modifier.size(10.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
-                Spacer(modifier = Modifier.width(10.dp))
+                Box(modifier = Modifier.size(8.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
                         isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
@@ -340,7 +403,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     },
                     color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -457,6 +522,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         }
                     )
                     2 -> ClawTab(
+                        currentMode = currentDevMode,
                         onClawCommand = { cmd -> 
                             if (RobotBleController.isConnected) {
                                 RobotBleController.sendBleCommand("claw:$cmd")
@@ -468,6 +534,12 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                 RobotBleController.sendBleCommand("claw_angle:$angle")
                             }
                             sendGetRequest("/claw?angle=$angle") 
+                        },
+                        onSwitchMode = { mode ->
+                            currentDevMode = mode
+                            val json = JSONObject().apply { put("mode", mode) }
+                            dispatchCommand("/switch_mode", json)
+                            Toast.makeText(context, "Switching to ${mode.uppercase()} mode... Rebooting ESP32...", Toast.LENGTH_LONG).show()
                         }
                     )
                     3 -> CameraTab(
@@ -487,7 +559,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     .clickable {
                         isStealthMode = false
                         (context as? Activity)?.window?.attributes = (context as? Activity)?.window?.attributes?.apply {
-                            screenBrightness = -1f // Restore default brightness
+                            screenBrightness = -1f
                         }
                     },
                 contentAlignment = Alignment.Center
