@@ -6,6 +6,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityEvent
 
 class GamepadAccessibilityService : AccessibilityService() {
 
@@ -19,7 +20,7 @@ class GamepadAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isServiceEnabled = true
         val info = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityServiceInfo.TYPES_ALL_MASK
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         }
@@ -107,7 +108,7 @@ class GamepadAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
     override fun onDestroy() {
