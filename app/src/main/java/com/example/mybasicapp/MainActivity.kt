@@ -20,6 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     private var hasNotificationPermission by mutableStateOf(false)
@@ -32,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private var lastHatX = 0f
     private var lastHatY = 0f
     private var lastClawAngle = -1
+
+    var currentTargetIp: String = "192.168.4.1"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,12 +180,10 @@ class MainActivity : ComponentActivity() {
             // Push DOWN (axisY = 1.0) -> 0 degrees (Fully Closed)
             val mappedAngle = (((1.0f - axisY) / 2.0f) * 180f).toInt().coerceIn(0, 180)
 
-            // Only transmit if the angle changed by at least 3 degrees (prevents BLE flood)
+            // Only transmit if the angle changed by at least 3 degrees (prevents network flood)
             if (Math.abs(mappedAngle - lastClawAngle) >= 3) {
                 lastClawAngle = mappedAngle
-                if (RobotBleController.isConnected) {
-                    RobotBleController.sendBleCommand("claw_angle:$mappedAngle")
-                }
+                dispatchClawAngle(mappedAngle)
             }
 
             // D-Pad Hat Motion
@@ -210,11 +215,46 @@ class MainActivity : ComponentActivity() {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("claw:$command")
         }
+        sendHttpAsync("/claw?cmd=$command", isPost = false)
+    }
+
+    private fun dispatchClawAngle(angle: Int) {
+        if (RobotBleController.isConnected) {
+            RobotBleController.sendBleCommand("claw_angle:$angle")
+        }
+        sendHttpAsync("/claw?angle=$angle", isPost = false)
     }
 
     private fun dispatchRobotAction(action: String) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("action:$action")
+        }
+        val json = JSONObject().apply { put("action", action) }
+        sendHttpAsync("/action", isPost = true, payload = json)
+    }
+
+    private fun sendHttpAsync(endpoint: String, isPost: Boolean, payload: JSONObject? = null) {
+        thread {
+            try {
+                val url = URL("http://${currentTargetIp}${endpoint}")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 1000
+                conn.readTimeout = 1000
+                if (isPost) {
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    payload?.let {
+                        OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
+                    }
+                } else {
+                    conn.requestMethod = "GET"
+                }
+                conn.responseCode
+                conn.disconnect()
+            } catch (e: Exception) {
+                // Handled gracefully if Wi-Fi endpoint is offline
+            }
         }
     }
 
