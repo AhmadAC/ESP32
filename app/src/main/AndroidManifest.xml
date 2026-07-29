@@ -2,31 +2,38 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Network and Wi-Fi Permissions (Required for Camera Stream, mDNS, and UDP broadcasts) -->
+    <!-- Network and Wi-Fi Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
-    <!-- Location Permissions (Required for Wi-Fi SSID scanning and legacy Bluetooth scans) -->
+    <!-- Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Legacy Bluetooth Permissions (Required for Android 11 / API 30 and below) -->
+    <!-- Legacy Bluetooth Permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
-    <!-- Modern Bluetooth Permissions (Required for Android 12 / API 31 and above) -->
+    <!-- Modern Bluetooth Permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- Audio Recording Permission (Required for Walkie-Talkie stream) -->
+    <!-- Wake Lock & Screen-Off Execution Permissions -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Audio Recording Permission -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Notification Permission (Required for Android 13 / API 33 and above) -->
+    <!-- Notification Permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Declare BLE Feature Requirement -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -37,7 +44,7 @@
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         tools:targetApi="m">
-        
+
         <activity
             android:name="com.example.mybasicapp.MainActivity"
             android:exported="true"
@@ -48,6 +55,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Foreground Service to keep BLE and Gamepad Controls active when Screen is OFF -->
+        <service
+            android:name="com.example.mybasicapp.GamepadControlService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <service
+            android:name="com.example.mybasicapp.HttpPollingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name="com.example.mybasicapp.AlertSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
     </application>
 
 </manifest>

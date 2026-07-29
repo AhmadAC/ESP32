@@ -173,7 +173,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     fun sendGetRequest(endpoint: String) {
         if (RobotBleController.isConnected && endpoint.contains("claw")) {
             val cmdValue = endpoint.substringAfter("cmd=", "").substringBefore("&")
-            val angleValue = endpoint.substringAfter("angle=", "")
+            val angleValue = endpoint.substringAfter("angle=", "").substringBefore("&")
             if (cmdValue.isNotEmpty()) {
                 RobotBleController.sendBleCommand("claw:$cmdValue")
             } else if (angleValue.isNotEmpty()) {
@@ -327,7 +327,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             Text(
                 text = when {
                     isPolling && isBleConnected -> "Connected to ESP Robot [Online (Wi-Fi + BLE)]"
-                    isBleConnected -> "Connected to ESP Robot [Online (Bluetooth BLE)]"
+                    isBleConnected -> "Connected to ESP Robot [Online (Bluetooth BLE + Gamepad Active)]"
                     isPolling -> "Connected to ESP Robot [Online (Wi-Fi HTTP)]"
                     else -> "Searching for ESP Robot [Offline]"
                 },
@@ -450,8 +450,18 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     }
                 )
                 2 -> ClawTab(
-                    onClawCommand = { cmd -> sendGetRequest("/claw?cmd=$cmd") },
-                    onClawAngle = { angle -> sendGetRequest("/claw?angle=$angle") }
+                    onClawCommand = { cmd -> 
+                        if (RobotBleController.isConnected) {
+                            RobotBleController.sendBleCommand("claw:$cmd")
+                        }
+                        sendGetRequest("/claw?cmd=$cmd") 
+                    },
+                    onClawAngle = { angle -> 
+                        if (RobotBleController.isConnected) {
+                            RobotBleController.sendBleCommand("claw_angle:$angle")
+                        }
+                        sendGetRequest("/claw?angle=$angle") 
+                    }
                 )
                 3 -> CameraTab(
                     ipAddress = ipAddress,
