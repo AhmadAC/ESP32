@@ -1,3 +1,4 @@
+
 // app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
@@ -34,7 +35,7 @@ import java.net.URL
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTriggerNotification: (String) -> Unit) {
-    var ipAddress by remember { mutableStateOf("192.168.4.1") }
+    var ipAddress by remember { mutableStateOf(AppNetworkManager.targetIp) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
@@ -69,6 +70,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var activeDrag by remember { mutableStateOf<String?>(null) }
     var pendingServoPayload by remember { mutableStateOf<JSONObject?>(null) }
     var notifyOnTrip by remember { mutableStateOf(true) }
+
+    // Synchronize IP Address globally for background Gamepad HTTP requests
+    LaunchedEffect(ipAddress) {
+        AppNetworkManager.targetIp = ipAddress
+    }
 
     fun dispatchCommand(actionOrEndpoint: String, jsonPayload: JSONObject? = null) {
         if (RobotBleController.isConnected) {
@@ -204,7 +210,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
         Column(modifier = Modifier.fillMaxSize()) {
             
-            // Header Bar with Compact Single-Line Buttons
+            // Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -215,7 +221,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 Box(modifier = Modifier.weight(1.3f)) {
                     OutlinedTextField(
                         value = ipAddress,
-                        onValueChange = { ipAddress = it },
+                        onValueChange = { 
+                            ipAddress = it 
+                            AppNetworkManager.targetIp = it
+                        },
                         label = { Text("ESP32 IP", color = PrimaryColor, fontSize = 10.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -235,6 +244,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                 text = { Text(ip, color = TextColor, fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     ipAddress = ip
+                                    AppNetworkManager.targetIp = ip
                                     ipsDropdownExpanded = false
                                     isPolling = true 
                                     Toast.makeText(context, "Connecting to $ip", Toast.LENGTH_SHORT).show()
@@ -252,6 +262,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                 val udpIp = findRobotViaUDP()
                                 if (udpIp != null) {
                                     ipAddress = udpIp
+                                    AppNetworkManager.targetIp = udpIp
                                     isPolling = true
                                     Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
                                     isScanningSubnet = false
@@ -263,6 +274,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                     if (!mdnsFound) {
                                         mdnsFound = true
                                         ipAddress = mdnsIp
+                                        AppNetworkManager.targetIp = mdnsIp
                                         isPolling = true
                                         Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
                                         isScanningSubnet = false
@@ -436,6 +448,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         onUseWifi = { dispatchCommand("/switch_to_wifi", JSONObject()) },
                         onBleIpReceived = { ip -> 
                             ipAddress = ip
+                            AppNetworkManager.targetIp = ip
                             isPolling = true
                         }
                     )
@@ -550,7 +563,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             }
         }
 
-        // Pure OLED Black Screen Overlay for 0mW Stealth Mode
         if (isStealthMode) {
             Box(
                 modifier = Modifier

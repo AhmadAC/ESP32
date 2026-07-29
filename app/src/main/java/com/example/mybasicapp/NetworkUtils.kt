@@ -43,6 +43,10 @@ import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
+object AppNetworkManager {
+    var targetIp: String = "192.168.4.1"
+}
+
 object RobotBleController {
     private const val TAG = "RobotBleController"
     private val SVC_UUID = UUID.fromString("0000abf0-0000-1000-8000-00805f9b34fb")
@@ -52,9 +56,9 @@ object RobotBleController {
     private var activeGatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
     
-    // Thread-safe FIFO Write Queue
     private val commandQueue = ConcurrentLinkedQueue<ByteArray>()
-    private var isWriting = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var isQueueProcessing = false
 
     var isConnected: Boolean = false
         private set
@@ -100,9 +104,8 @@ object RobotBleController {
                                 activeGatt = gatt
                                 isConnected = true
                                 commandQueue.clear()
-                                isWriting = false
+                                isQueueProcessing = false
 
-                                // Request higher MTU size (512 bytes) to allow long Wi-Fi credentials
                                 Handler(Looper.getMainLooper()).postDelayed({
                                     try { gatt.requestMtu(512) } catch (e: Exception) {}
                                 }, 300)
@@ -119,7 +122,7 @@ object RobotBleController {
                                 activeGatt = null
                                 rxChar = null
                                 commandQueue.clear()
-                                isWriting = false
+                                isQueueProcessing = false
                                 Handler(Looper.getMainLooper()).post {
                                     onStatus("BLE Disconnected")
                                     onConnectedStateChange(false)
@@ -147,15 +150,6 @@ object RobotBleController {
 
                         override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                             Log.i(TAG, "BLE MTU Negotiated: $mtu bytes")
-                        }
-
-                        override fun onCharacteristicWrite(
-                            gatt: BluetoothGatt?,
-                            characteristic: BluetoothGattCharacteristic?,
-                            status: Int
-                        ) {
-                            isWriting = false
-                            processNextQueueItem()
                         }
                     }
 
@@ -189,44 +183,46 @@ object RobotBleController {
     fun sendBleCommand(command: String): Boolean {
         if (!isConnected || rxChar == null) return false
 
-        // Purge older pending angle updates when a newer angle arrives
         if (command.startsWith("claw_angle:")) {
             commandQueue.removeIf { String(it).startsWith("claw_angle:") }
         }
 
         commandQueue.offer(command.toByteArray())
-        processNextQueueItem()
+        startQueueProcessing()
         return true
     }
 
     @Synchronized
-    @SuppressLint("MissingPermission")
-    private fun processNextQueueItem() {
-        if (isWriting || commandQueue.isEmpty()) return
-        val gatt = activeGatt ?: return
-        val characteristic = rxChar ?: return
-        val bytes = commandQueue.poll() ?: return
+    private fun startQueueProcessing() {
+        if (isQueueProcessing) return
+        isQueueProcessing = true
+        drainQueueRunnable.run()
+    }
 
-        isWriting = true
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val res = gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
-                if (res != 0) {
-                    isWriting = false
-                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 10)
+    private val drainQueueRunnable = object : Runnable {
+        @SuppressLint("MissingPermission")
+        override fun run() {
+            val bytes = commandQueue.poll()
+            if (bytes != null && isConnected) {
+                val gatt = activeGatt
+                val characteristic = rxChar
+                if (gatt != null && characteristic != null) {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
+                        } else {
+                            characteristic.value = bytes
+                            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                            gatt.writeCharacteristic(characteristic)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error executing BLE write", e)
+                    }
                 }
+                mainHandler.postDelayed(this, 12)
             } else {
-                characteristic.value = bytes
-                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                val success = gatt.writeCharacteristic(characteristic)
-                if (!success) {
-                    isWriting = false
-                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 10)
-                }
+                isQueueProcessing = false
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error executing BLE write", e)
-            isWriting = false
         }
     }
 
@@ -239,7 +235,7 @@ object RobotBleController {
         activeGatt = null
         rxChar = null
         commandQueue.clear()
-        isWriting = false
+        isQueueProcessing = false
         isConnected = false
     }
 }

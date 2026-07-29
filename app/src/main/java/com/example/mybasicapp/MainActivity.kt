@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -41,8 +40,6 @@ class MainActivity : ComponentActivity() {
     private var lastClawAngle = -1
     private var lastBleTransmitTime = 0L
     private var isJoystickActive = false
-
-    var currentTargetIp: String = "192.168.4.1"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -187,11 +184,8 @@ class MainActivity : ComponentActivity() {
             val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
             val axisX = event.getAxisValue(MotionEvent.AXIS_X)
-            val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
+            val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
 
-            // Tactile Spring-Loaded Control:
-            // - Deflection UP (-axisY): Opens claw proportionally (0 to 180 degrees)
-            // - Release / Neutral: Reverts back to 0 degrees (Closed / Resting)
             if (axisY < -0.1f) {
                 isJoystickActive = true
                 val openProportion = (-axisY).coerceIn(0f, 1f)
@@ -206,7 +200,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             } else if (isJoystickActive && Math.abs(axisY) <= 0.1f) {
-                // Revert claw back to resting position (0 deg) when joystick is released
                 isJoystickActive = false
                 lastClawAngle = 0
                 dispatchClawAngle(0)
@@ -262,7 +255,8 @@ class MainActivity : ComponentActivity() {
     private fun sendHttpAsync(endpoint: String, isPost: Boolean, payload: JSONObject? = null) {
         thread {
             try {
-                val url = URL("http://${currentTargetIp}${endpoint}")
+                val ip = AppNetworkManager.targetIp
+                val url = URL("http://${ip}${endpoint}")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 1000
                 conn.readTimeout = 1000
