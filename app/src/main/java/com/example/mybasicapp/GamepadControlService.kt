@@ -62,7 +62,7 @@ class GamepadControlService : Service(), InputManager.InputDeviceListener {
     private fun acquireWakeLock() {
         wakeLock?.let {
             if (!it.isHeld) {
-                it.acquire(24 * 60 * 60 * 1000L) // Hold wake lock for background screen-off control
+                it.acquire(24 * 60 * 60 * 1000L)
                 Log.i(TAG, "PARTIAL_WAKE_LOCK acquired. CPU will stay alive with screen off.")
             }
         }
@@ -85,8 +85,10 @@ class GamepadControlService : Service(), InputManager.InputDeviceListener {
     private fun startForegroundWithNotification() {
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            this,
+            0,
+            notificationIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
