@@ -52,7 +52,7 @@ object RobotBleController {
     private var activeGatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
     
-    // Thread-safe FIFO Write Queue with latest-only filtering for continuous streams
+    // Thread-safe FIFO Write Queue
     private val commandQueue = ConcurrentLinkedQueue<ByteArray>()
     private var isWriting = false
 
@@ -101,6 +101,12 @@ object RobotBleController {
                                 isConnected = true
                                 commandQueue.clear()
                                 isWriting = false
+
+                                // Request higher MTU size (512 bytes) to allow long Wi-Fi credentials
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    try { gatt.requestMtu(512) } catch (e: Exception) {}
+                                }, 300)
+
                                 Handler(Looper.getMainLooper()).post {
                                     onStatus("Connected via BLE!")
                                     onConnectedStateChange(true)
@@ -137,6 +143,10 @@ object RobotBleController {
                                     }
                                 }
                             }
+                        }
+
+                        override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
+                            Log.i(TAG, "BLE MTU Negotiated: $mtu bytes")
                         }
 
                         override fun onCharacteristicWrite(
@@ -179,7 +189,7 @@ object RobotBleController {
     fun sendBleCommand(command: String): Boolean {
         if (!isConnected || rxChar == null) return false
 
-        // Filter out obsolete analog angle packets if a newer angle or digital button arrives
+        // Purge older pending angle updates when a newer angle arrives
         if (command.startsWith("claw_angle:")) {
             commandQueue.removeIf { String(it).startsWith("claw_angle:") }
         }

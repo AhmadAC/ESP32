@@ -42,7 +42,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var isBleConnected by remember { mutableStateOf(false) }
     var bleStatusText by remember { mutableStateOf("BLE Idle") }
     var isStealthMode by remember { mutableStateOf(false) }
-    var currentDevMode by remember { mutableStateOf("robot") } // "robot" or "claw"
+    var currentDevMode by remember { mutableStateOf("robot") }
     
     val isOnline = isPolling || isBleConnected
 
@@ -204,7 +204,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
         Column(modifier = Modifier.fillMaxSize()) {
             
-            // Header Bar with Compact Single-Line Fitting Buttons
+            // Header Bar with Compact Single-Line Buttons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -244,7 +244,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     }
                 }
 
-                // Compact Single-Line Button: Find
                 Button(
                     onClick = {
                         if (!isScanningSubnet) {
@@ -307,7 +306,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     )
                 }
 
-                // Compact Single-Line Button: BLE
                 Button(
                     onClick = {
                         if (isBleConnected) {
@@ -338,7 +336,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     )
                 }
 
-                // Compact Single-Line Button: HTTP
                 Button(
                     onClick = { isPolling = !isPolling },
                     colors = ButtonDefaults.buttonColors(containerColor = if (isPolling) BtnRed else BtnGreen),
@@ -357,7 +354,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     )
                 }
 
-                // Compact Single-Line Button: Stealth
                 Button(
                     onClick = {
                         isStealthMode = true
@@ -430,6 +426,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         ipAddress = ipAddress,
                         hasLocationPermission = hasLocationPermission,
                         onSaveWifi = { ssid, pass -> 
+                            if (RobotBleController.isConnected) {
+                                RobotBleController.sendBleCommand("wifi:$ssid,$pass")
+                                Toast.makeText(context, "Provisioning via BLE to $ssid...", Toast.LENGTH_SHORT).show()
+                            }
                             dispatchCommand("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
                         },
                         onForceAp = { dispatchCommand("/switch_to_ap", JSONObject()) },
