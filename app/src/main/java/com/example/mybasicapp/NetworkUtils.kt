@@ -56,6 +56,7 @@ object RobotBleController {
     private var activeGatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
     
+    // Thread-safe FIFO Write Queue with Non-Blocking Handler Dispatch
     private val commandQueue = ConcurrentLinkedQueue<ByteArray>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isQueueProcessing = false
@@ -106,17 +107,14 @@ object RobotBleController {
                                 commandQueue.clear()
                                 isQueueProcessing = false
 
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    try { gatt.requestMtu(512) } catch (e: Exception) {}
-                                }, 300)
-
                                 Handler(Looper.getMainLooper()).post {
                                     onStatus("Connected via BLE!")
                                     onConnectedStateChange(true)
                                 }
+                                // Discover services FIRST before requesting MTU
                                 Handler(Looper.getMainLooper()).postDelayed({
                                     try { gatt.discoverServices() } catch (e: Exception) {}
-                                }, 600)
+                                }, 300)
                             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                                 isConnected = false
                                 activeGatt = null
@@ -145,6 +143,11 @@ object RobotBleController {
                                         try { gatt.writeDescriptor(desc) } catch (e: Exception) {}
                                     }
                                 }
+
+                                // Request higher MTU size (512 bytes) AFTER services are discovered
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    try { gatt.requestMtu(512) } catch (e: Exception) {}
+                                }, 300)
                             }
                         }
 
@@ -183,6 +186,7 @@ object RobotBleController {
     fun sendBleCommand(command: String): Boolean {
         if (!isConnected || rxChar == null) return false
 
+        // Purge obsolete angle commands if a newer angle arrives
         if (command.startsWith("claw_angle:")) {
             commandQueue.removeIf { String(it).startsWith("claw_angle:") }
         }
@@ -219,6 +223,7 @@ object RobotBleController {
                         Log.e(TAG, "Error executing BLE write", e)
                     }
                 }
+                // Schedule next write in 12ms to allow physical BLE packet transmission
                 mainHandler.postDelayed(this, 12)
             } else {
                 isQueueProcessing = false
