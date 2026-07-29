@@ -334,7 +334,15 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             RobotBleController.connectToRobot(
                                 context = context,
                                 onStatus = { status -> bleStatusText = status },
-                                onConnectedStateChange = { connected -> isBleConnected = connected }
+                                onConnectedStateChange = { connected -> isBleConnected = connected },
+                                onIpReceived = { ip -> 
+                                    ipAddress = ip
+                                    AppNetworkManager.targetIp = ip
+                                    if (!isPolling) {
+                                        isPolling = true 
+                                    }
+                                    Toast.makeText(context, "IP Acquired from BLE: $ip", Toast.LENGTH_SHORT).show()
+                                }
                             )
                         }
                     },

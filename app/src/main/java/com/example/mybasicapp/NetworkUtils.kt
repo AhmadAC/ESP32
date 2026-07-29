@@ -68,7 +68,8 @@ object RobotBleController {
     fun connectToRobot(
         context: Context,
         onStatus: (String) -> Unit,
-        onConnectedStateChange: (Boolean) -> Unit
+        onConnectedStateChange: (Boolean) -> Unit,
+        onIpReceived: ((String) -> Unit)? = null
     ) {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = manager?.adapter
@@ -153,6 +154,28 @@ object RobotBleController {
 
                         override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                             Log.i(TAG, "BLE MTU Negotiated: $mtu bytes")
+                        }
+
+                        @Deprecated("Deprecated in Java")
+                        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+                            handleCharacteristic(characteristic, characteristic.value)
+                        }
+
+                        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+                            handleCharacteristic(characteristic, value)
+                        }
+
+                        private fun handleCharacteristic(characteristic: BluetoothGattCharacteristic, value: ByteArray?) {
+                            if (value == null) return
+                            if (characteristic.uuid == IP_UUID) {
+                                val ip = String(value).replace("\u0000", "").trim()
+                                if (ip != "0.0.0.0" && ip.isNotEmpty()) {
+                                    Handler(Looper.getMainLooper()).post {
+                                        onStatus("Robot IP Acquired: $ip")
+                                        onIpReceived?.invoke(ip)
+                                    }
+                                }
+                            }
                         }
                     }
 
