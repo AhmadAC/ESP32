@@ -2,8 +2,6 @@
 package com.example.mybasicapp
 
 import android.app.Activity
-import android.content.Intent
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background

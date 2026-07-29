@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var lastHatY = 0f
     private var lastClawAngle = -1
     private var lastBleTransmitTime = 0L
+    private var isJoystickActive = false
 
     var currentTargetIp: String = "192.168.4.1"
 
@@ -178,7 +179,7 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    // Intercept Left Joystick Motion for Smooth Claw Angle Slider (0 to 180 degrees)
+    // Intercept Left Joystick Motion for Tactile Spring-Loaded Claw Control
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if ((event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK &&
             event.action == MotionEvent.ACTION_MOVE) {
@@ -186,17 +187,29 @@ class MainActivity : ComponentActivity() {
             val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
             val axisX = event.getAxisValue(MotionEvent.AXIS_X)
-            val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
+            val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
 
-            val mappedAngle = (((1.0f - axisY) / 2.0f) * 180f).toInt().coerceIn(0, 180)
-            val currentTime = System.currentTimeMillis()
+            // Tactile Spring-Loaded Control:
+            // - Deflection UP (-axisY): Opens claw proportionally (0 to 180 degrees)
+            // - Release / Neutral: Reverts back to 0 degrees (Closed / Resting)
+            if (axisY < -0.1f) {
+                isJoystickActive = true
+                val openProportion = (-axisY).coerceIn(0f, 1f)
+                val targetAngle = (openProportion * 180f).toInt()
+                val currentTime = System.currentTimeMillis()
 
-            if (Math.abs(mappedAngle - lastClawAngle) >= 3 || (currentTime - lastBleTransmitTime) >= 40) {
-                if (mappedAngle != lastClawAngle) {
-                    lastClawAngle = mappedAngle
-                    lastBleTransmitTime = currentTime
-                    dispatchClawAngle(mappedAngle)
+                if (Math.abs(targetAngle - lastClawAngle) >= 3 || (currentTime - lastBleTransmitTime) >= 35) {
+                    if (targetAngle != lastClawAngle) {
+                        lastClawAngle = targetAngle
+                        lastBleTransmitTime = currentTime
+                        dispatchClawAngle(targetAngle)
+                    }
                 }
+            } else if (isJoystickActive && Math.abs(axisY) <= 0.1f) {
+                // Revert claw back to resting position (0 deg) when joystick is released
+                isJoystickActive = false
+                lastClawAngle = 0
+                dispatchClawAngle(0)
             }
 
             // D-Pad Hat Motion

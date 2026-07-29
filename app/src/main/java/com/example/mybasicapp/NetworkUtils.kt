@@ -52,7 +52,7 @@ object RobotBleController {
     private var activeGatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
     
-    // Thread-safe FIFO Write Queue to prevent GATT packet collisions
+    // Thread-safe FIFO Write Queue with latest-only filtering for continuous streams
     private val commandQueue = ConcurrentLinkedQueue<ByteArray>()
     private var isWriting = false
 
@@ -178,6 +178,12 @@ object RobotBleController {
 
     fun sendBleCommand(command: String): Boolean {
         if (!isConnected || rxChar == null) return false
+
+        // Filter out obsolete analog angle packets if a newer angle or digital button arrives
+        if (command.startsWith("claw_angle:")) {
+            commandQueue.removeIf { String(it).startsWith("claw_angle:") }
+        }
+
         commandQueue.offer(command.toByteArray())
         processNextQueueItem()
         return true
@@ -197,7 +203,7 @@ object RobotBleController {
                 val res = gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
                 if (res != 0) {
                     isWriting = false
-                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 15)
+                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 10)
                 }
             } else {
                 characteristic.value = bytes
@@ -205,7 +211,7 @@ object RobotBleController {
                 val success = gatt.writeCharacteristic(characteristic)
                 if (!success) {
                     isWriting = false
-                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 15)
+                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 10)
                 }
             }
         } catch (e: Exception) {
