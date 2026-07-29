@@ -1,4 +1,3 @@
-
 // app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
@@ -40,12 +39,13 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val context = LocalContext.current
     
     var isPolling by remember { mutableStateOf(false) }
+    var isHttpConnected by remember { mutableStateOf(false) }
     var isBleConnected by remember { mutableStateOf(false) }
     var bleStatusText by remember { mutableStateOf("BLE Idle") }
     var isStealthMode by remember { mutableStateOf(false) }
     var currentDevMode by remember { mutableStateOf("robot") }
     
-    val isOnline = isPolling || isBleConnected
+    val isOnline = isHttpConnected || isBleConnected
 
     var sensorEnabled by remember { mutableStateOf(false) }
     var sensorDistance by remember { mutableStateOf(0.0) }
@@ -126,6 +126,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     LaunchedEffect(isPolling, ipAddress) {
         if (isPolling) {
             while (true) {
+                var successfulPoll = false
                 try {
                     val url = URL("http://${ipAddress}/angles")
                     withContext(Dispatchers.IO) {
@@ -135,6 +136,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         connection.readTimeout = 2000
                         
                         if (connection.responseCode == 200) {
+                            successfulPoll = true
                             val response = connection.inputStream.bufferedReader().use { it.readText() }
                             val json = JSONObject(response)
                             
@@ -176,8 +178,12 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     }
                 } catch (e: Exception) {
                 }
+                
+                isHttpConnected = successfulPoll
                 delay(800)
             }
+        } else {
+            isHttpConnected = false
         }
     }
 
@@ -404,9 +410,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
-                        isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
+                        isHttpConnected && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
                         isBleConnected -> "Connected [Online (BLE + Gamepad Active)]"
-                        isPolling -> "Connected [Online (Wi-Fi HTTP)]"
+                        isHttpConnected -> "Connected [Online (Wi-Fi HTTP)]"
+                        isPolling -> "Connecting... [Polling HTTP]"
                         else -> "Searching for ESP Robot [Offline]"
                     },
                     color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
