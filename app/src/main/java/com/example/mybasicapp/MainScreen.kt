@@ -36,7 +36,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val context = LocalContext.current
     
     var isPolling by remember { mutableStateOf(false) }
-    var isOnline by remember { mutableStateOf(false) }
+    var isBleConnected by remember { mutableStateOf(false) }
+    var bleStatusText by remember { mutableStateOf("BLE Idle") }
+    
+    val isOnline = isPolling || isBleConnected
+
     var sensorEnabled by remember { mutableStateOf(false) }
     var sensorDistance by remember { mutableStateOf(0.0) }
     var safetyLock by remember { mutableStateOf(false) }
@@ -61,21 +65,50 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var pendingServoPayload by remember { mutableStateOf<JSONObject?>(null) }
     var notifyOnTrip by remember { mutableStateOf(true) }
 
-    LaunchedEffect(pendingServoPayload) {
-        pendingServoPayload?.let {
-            delay(40)
-            try {
-                val url = URL("http://${ipAddress}/servo")
-                withContext(Dispatchers.IO) {
+    fun dispatchCommand(actionOrEndpoint: String, jsonPayload: JSONObject? = null) {
+        if (RobotBleController.isConnected) {
+            val cmd = jsonPayload?.toString() ?: actionOrEndpoint
+            RobotBleController.sendBleCommand(cmd)
+        }
+        
+        if (isPolling) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
+                    val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
+                    val url = URL("http://${ipAddress}${endpoint}")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.setRequestProperty("Content-Type", "application/json")
                     conn.doOutput = true
-                    OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
+                    OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
                     conn.responseCode
                     conn.disconnect()
-                }
-            } catch (e: Exception) {}
+                } catch (e: Exception) {}
+            }
+        }
+    }
+
+    LaunchedEffect(pendingServoPayload) {
+        pendingServoPayload?.let {
+            delay(40)
+            if (RobotBleController.isConnected) {
+                RobotBleController.sendBleCommand(it.toString())
+            }
+            if (isPolling) {
+                try {
+                    val url = URL("http://${ipAddress}/servo")
+                    withContext(Dispatchers.IO) {
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.doOutput = true
+                        OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
+                        conn.responseCode
+                        conn.disconnect()
+                    }
+                } catch (e: Exception) {}
+            }
         }
     }
 
@@ -95,7 +128,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             val json = JSONObject(response)
                             
                             withContext(Dispatchers.Main) {
-                                isOnline = true
                                 sensorEnabled = json.optBoolean("sensor_enabled", false)
                                 safetyLock = json.optBoolean("safety_lock", false)
                                 sensorDistance = json.optDouble("sensor_distance", -1.0)
@@ -128,45 +160,36 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                 }
                                 lastLockState = safetyLock
                             }
-                        } else {
-                            withContext(Dispatchers.Main) { isOnline = false }
                         }
                         connection.disconnect()
                     }
                 } catch (e: Exception) {
-                    withContext(Dispatchers.Main) { isOnline = false }
                 }
                 delay(800)
             }
-        } else {
-            isOnline = false
         }
     }
 
-    fun sendPostRequest(endpoint: String, payload: JSONObject) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val url = URL("http://${ipAddress}${endpoint}")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
-                conn.responseCode 
-                conn.disconnect()
-            } catch (e: Exception) {}
-        }
-    }
-    
     fun sendGetRequest(endpoint: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val url = URL("http://${ipAddress}${endpoint}")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.responseCode
-                conn.disconnect()
-            } catch (e: Exception) {}
+        if (RobotBleController.isConnected && endpoint.contains("claw")) {
+            val cmdValue = endpoint.substringAfter("cmd=", "").substringBefore("&")
+            val angleValue = endpoint.substringAfter("angle=", "")
+            if (cmdValue.isNotEmpty()) {
+                RobotBleController.sendBleCommand("claw:$cmdValue")
+            } else if (angleValue.isNotEmpty()) {
+                RobotBleController.sendBleCommand("claw_angle:$angleValue")
+            }
+        }
+        if (isPolling) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val url = URL("http://${ipAddress}${endpoint}")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.responseCode
+                    conn.disconnect()
+                } catch (e: Exception) {}
+            }
         }
     }
 
@@ -213,12 +236,11 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             HtmlButton(
                 text = if (isScanningSubnet) "${(subnetProgress * 100).toInt()}%" else "Find Robot",
                 color = if (isScanningSubnet) BtnOrange else BtnPurple,
-                modifier = Modifier.width(100.dp)
+                modifier = Modifier.width(90.dp)
             ) {
                 if (!isScanningSubnet) {
                     isScanningSubnet = true
                     scope.launch {
-                        // 1. Try blazing fast UDP Broadcast
                         val udpIp = findRobotViaUDP()
                         if (udpIp != null) {
                             ipAddress = udpIp
@@ -228,7 +250,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             return@launch
                         }
 
-                        // 2. Try zero-config mDNS
                         var mdnsFound = false
                         findRobotViaMDNS(context) { mdnsIp ->
                             if (!mdnsFound) {
@@ -241,7 +262,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         }
                         delay(4000) 
 
-                        // 3. Last Resort: Subnet Brute Force Scan
                         if (!mdnsFound && isScanningSubnet) {
                             scanSubnetForWebServers(
                                 context = context,
@@ -262,11 +282,32 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     }
                 }
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+
+            HtmlButton(
+                text = if (isBleConnected) "BLE On" else "BLE",
+                color = if (isBleConnected) BtnPurple else BtnGray,
+                modifier = Modifier.width(70.dp)
+            ) {
+                if (isBleConnected) {
+                    RobotBleController.disconnect()
+                    isBleConnected = false
+                    bleStatusText = "BLE Disconnected"
+                } else {
+                    RobotBleController.connectToRobot(
+                        context = context,
+                        onStatus = { status -> bleStatusText = status },
+                        onConnectedStateChange = { connected -> isBleConnected = connected }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
             
             HtmlButton(
-                text = if (isPolling) "Disconnect" else "Connect",
-                color = if (isPolling) BtnRed else BtnGreen
+                text = if (isPolling) "HTTP Off" else "HTTP",
+                color = if (isPolling) BtnRed else BtnGreen,
+                modifier = Modifier.width(80.dp)
             ) {
                 isPolling = !isPolling
             }
@@ -284,7 +325,12 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             Box(modifier = Modifier.size(10.dp).background(if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape))
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = if (isOnline) "Connected to ESP Robot [Online]" else "Searching for ESP Robot [Offline]",
+                text = when {
+                    isPolling && isBleConnected -> "Connected to ESP Robot [Online (Wi-Fi + BLE)]"
+                    isBleConnected -> "Connected to ESP Robot [Online (Bluetooth BLE)]"
+                    isPolling -> "Connected to ESP Robot [Online (Wi-Fi HTTP)]"
+                    else -> "Searching for ESP Robot [Offline]"
+                },
                 color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp
@@ -312,10 +358,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     ipAddress = ipAddress,
                     hasLocationPermission = hasLocationPermission,
                     onSaveWifi = { ssid, pass -> 
-                        sendPostRequest("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
+                        dispatchCommand("/save", JSONObject().apply { put("ssid", ssid); put("pass", pass) })
                     },
-                    onForceAp = { sendPostRequest("/switch_to_ap", JSONObject()) },
-                    onUseWifi = { sendPostRequest("/switch_to_wifi", JSONObject()) },
+                    onForceAp = { dispatchCommand("/switch_to_ap", JSONObject()) },
+                    onUseWifi = { dispatchCommand("/switch_to_wifi", JSONObject()) },
                     onBleIpReceived = { ip -> 
                         ipAddress = ip
                         isPolling = true
@@ -388,7 +434,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             put("tripped_audio", tAudio)
                             put("cleared_audio", cAudio)
                         }
-                        sendPostRequest("/sensor", json)
+                        dispatchCommand("/sensor", json)
                         trippedAction = tAction
                         clearedAction = cAction
                         trippedAudio = tAudio
@@ -396,10 +442,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         sensorEnabled = enabled
                     },
                     onRobotAction = { act ->
-                        val json = JSONObject().apply { put("action", act) }
-                        sendPostRequest("/action", json)
+                        dispatchCommand(act)
                     },
-                    onAudioCommand = { endpoint, payload -> sendPostRequest(endpoint, payload) },
+                    onAudioCommand = { endpoint, payload -> dispatchCommand(endpoint, payload) },
                     onWalkieTalkie = {
                         Toast.makeText(context, "Mic Transmitting to Robot...", Toast.LENGTH_SHORT).show()
                     }
@@ -410,7 +455,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 )
                 3 -> CameraTab(
                     ipAddress = ipAddress,
-                    onFlipCamera = { sendPostRequest("/cam_flip", JSONObject()) }
+                    onFlipCamera = { dispatchCommand("/cam_flip", JSONObject()) }
                 )
             }
         }

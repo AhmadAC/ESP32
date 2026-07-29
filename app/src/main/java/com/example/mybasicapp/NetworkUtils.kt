@@ -25,6 +25,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import android.content.pm.PackageManager
@@ -40,6 +41,152 @@ import java.net.DatagramSocket
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+
+object RobotBleController {
+    private const val TAG = "RobotBleController"
+    private val SVC_UUID = UUID.fromString("0000abf0-0000-1000-8000-00805f9b34fb")
+    private val RX_UUID = UUID.fromString("0000abf1-0000-1000-8000-00805f9b34fb")
+    private val IP_UUID = UUID.fromString("0000abf3-0000-1000-8000-00805f9b34fb")
+
+    private var activeGatt: BluetoothGatt? = null
+    private var rxChar: BluetoothGattCharacteristic? = null
+    var isConnected: Boolean = false
+        private set
+
+    @SuppressLint("MissingPermission")
+    fun connectToRobot(
+        context: Context,
+        onStatus: (String) -> Unit,
+        onConnectedStateChange: (Boolean) -> Unit
+    ) {
+        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = manager?.adapter
+        if (adapter == null || !adapter.isEnabled) {
+            onStatus("Bluetooth Disabled")
+            onConnectedStateChange(false)
+            return
+        }
+
+        val scanner = adapter.bluetoothLeScanner
+        if (scanner == null) {
+            onStatus("BLE Scanner Unavailable")
+            onConnectedStateChange(false)
+            return
+        }
+
+        onStatus("Scanning BLE for ESPRobot...")
+
+        val scanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val name = try {
+                    result.device.name ?: result.scanRecord?.deviceName
+                } catch (e: SecurityException) {
+                    result.scanRecord?.deviceName
+                }
+
+                if (name == "ESPRobot") {
+                    try { scanner.stopScan(this) } catch (e: Exception) {}
+                    onStatus("Found ESPRobot! Connecting...")
+
+                    val gattCallback = object : BluetoothGattCallback() {
+                        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+                            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                                activeGatt = gatt
+                                isConnected = true
+                                Handler(Looper.getMainLooper()).post {
+                                    onStatus("Connected via BLE!")
+                                    onConnectedStateChange(true)
+                                }
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    try { gatt.discoverServices() } catch (e: Exception) {}
+                                }, 600)
+                            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                                isConnected = false
+                                activeGatt = null
+                                rxChar = null
+                                Handler(Looper.getMainLooper()).post {
+                                    onStatus("BLE Disconnected")
+                                    onConnectedStateChange(false)
+                                }
+                                try { gatt.close() } catch (e: Exception) {}
+                            }
+                        }
+
+                        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                val service = gatt.getService(SVC_UUID)
+                                rxChar = service?.getCharacteristic(RX_UUID)
+                                val ipChar = service?.getCharacteristic(IP_UUID)
+
+                                if (ipChar != null) {
+                                    gatt.setCharacteristicNotification(ipChar, true)
+                                    val desc = ipChar.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                                    if (desc != null) {
+                                        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                        try { gatt.writeDescriptor(desc) } catch (e: Exception) {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        result.device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                    } else {
+                        result.device.connectGatt(context, false, gattCallback)
+                    }
+                }
+            }
+        }
+
+        val scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        try {
+            scanner.startScan(null, scanSettings, scanCallback)
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isConnected) {
+                    try { scanner.stopScan(scanCallback) } catch (e: Exception) {}
+                    if (!isConnected) onStatus("BLE Scan Timeout")
+                }
+            }, 8000)
+        } catch (e: SecurityException) {
+            onStatus("Bluetooth Permission Denied")
+            onConnectedStateChange(false)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun sendBleCommand(command: String): Boolean {
+        val gatt = activeGatt ?: return false
+        val characteristic = rxChar ?: return false
+        return try {
+            val bytes = command.toByteArray()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == 0
+            } else {
+                characteristic.value = bytes
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                gatt.writeCharacteristic(characteristic)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send BLE command", e)
+            false
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun disconnect() {
+        try {
+            activeGatt?.disconnect()
+            activeGatt?.close()
+        } catch (e: Exception) {}
+        activeGatt = null
+        rxChar = null
+        isConnected = false
+    }
+}
 
 fun getLocalWifiSubnetPrefix(context: Context): String? {
     return try {
@@ -87,9 +234,6 @@ fun scanSubnetForWebServers(
     }
 }
 
-// =========================================================================
-// 1. FAST UDP BROADCAST LISTENER (HEARTBEAT)
-// =========================================================================
 suspend fun findRobotViaUDP(): String? = withContext(Dispatchers.IO) {
     var socket: DatagramSocket? = null
     try {
@@ -103,16 +247,12 @@ suspend fun findRobotViaUDP(): String? = withContext(Dispatchers.IO) {
             return@withContext message.removePrefix("ROBOT_DOG_IP:").trim()
         }
     } catch (e: Exception) {
-        // Timeout
     } finally {
         socket?.close()
     }
     return@withContext null
 }
 
-// =========================================================================
-// 2. ZERO SETUP mDNS RESOLVER
-// =========================================================================
 fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
     val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     val discoveryListener = object : NsdManager.DiscoveryListener {
@@ -125,9 +265,7 @@ fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
                             Handler(Looper.getMainLooper()).post { onIpFound(ip) }
                             try {
                                 nsdManager.stopServiceDiscovery(currentListener)
-                            } catch (e: Exception) {
-                                // Ignore if discovery was already stopped
-                            }
+                            } catch (e: Exception) {}
                         }
                     }
                     override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
@@ -147,9 +285,6 @@ fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
     nsdManager.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
 }
 
-// =========================================================================
-// 3. BLE PROVISIONING (COMMERCIAL STANDARD)
-// =========================================================================
 @SuppressLint("MissingPermission")
 fun setupRobotViaBLE(
     context: Context,
@@ -159,7 +294,6 @@ fun setupRobotViaBLE(
     onIpReceived: (String) -> Unit
 ) {
     try {
-        // CRITICAL CHECK: Verify system Location Services (GPS) is actively enabled 
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
         val isGpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
         if (!isGpsEnabled) {
@@ -211,11 +345,9 @@ fun setupRobotViaBLE(
 
                                     if (newState == BluetoothProfile.STATE_CONNECTED) {
                                         Handler(Looper.getMainLooper()).post { onStatus("Connected. Waiting for services...") }
-                                        
                                         Handler(Looper.getMainLooper()).postDelayed({
                                             try { gatt.discoverServices() } catch (e: Exception) { }
                                         }, 600)
-                                        
                                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                                         isPollingIp = false
                                         if (isConnecting) {
@@ -244,14 +376,12 @@ fun setupRobotViaBLE(
                                         
                                         if (ipChar != null) {
                                             gatt.setCharacteristicNotification(ipChar, true)
-                                            
                                             val desc = ipChar.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                                             if (desc != null) {
                                                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                                                 try { gatt.writeDescriptor(desc) } catch (e: Exception) {}
                                             }
                                             
-                                            // Start Polling loop to ensure we receive the IP even if Android misses the notification packet
                                             isPollingIp = true
                                             Thread {
                                                 while (isPollingIp && isConnecting) {
@@ -260,7 +390,6 @@ fun setupRobotViaBLE(
                                                 }
                                             }.start()
                                             
-                                            // Safety timeout for Wi-Fi connection
                                             Handler(Looper.getMainLooper()).postDelayed({
                                                 if (isPollingIp && isConnecting) {
                                                     isPollingIp = false
@@ -269,7 +398,6 @@ fun setupRobotViaBLE(
                                                     try { gatt.disconnect() } catch (e: Exception) {}
                                                 }
                                             }, 25000)
-                                            
                                         } else {
                                             Handler(Looper.getMainLooper()).post { onStatus("Warning: IP Characteristic missing") }
                                         }
@@ -278,10 +406,8 @@ fun setupRobotViaBLE(
                                             try {
                                                 onStatus("Sending Wi-Fi Credentials...")
                                                 val credsChar = service.getCharacteristic(credsUuid)
-                                                
                                                 if (credsChar != null) {
                                                     val payload = "$ssid,$pass".toByteArray()
-                                                    
                                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                                         gatt.writeCharacteristic(credsChar, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
                                                     } else {
@@ -358,7 +484,6 @@ fun setupRobotViaBLE(
             }
         }
 
-        // Configure ScanSettings to operate in High Power / Low Latency mode
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
