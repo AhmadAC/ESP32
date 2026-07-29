@@ -41,6 +41,7 @@ import java.net.DatagramSocket
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 
 object RobotBleController {
     private const val TAG = "RobotBleController"
@@ -50,6 +51,11 @@ object RobotBleController {
 
     private var activeGatt: BluetoothGatt? = null
     private var rxChar: BluetoothGattCharacteristic? = null
+    
+    // Thread-safe FIFO Write Queue to prevent GATT packet collisions
+    private val commandQueue = ConcurrentLinkedQueue<ByteArray>()
+    private var isWriting = false
+
     var isConnected: Boolean = false
         private set
 
@@ -93,6 +99,8 @@ object RobotBleController {
                             if (newState == BluetoothProfile.STATE_CONNECTED) {
                                 activeGatt = gatt
                                 isConnected = true
+                                commandQueue.clear()
+                                isWriting = false
                                 Handler(Looper.getMainLooper()).post {
                                     onStatus("Connected via BLE!")
                                     onConnectedStateChange(true)
@@ -104,6 +112,8 @@ object RobotBleController {
                                 isConnected = false
                                 activeGatt = null
                                 rxChar = null
+                                commandQueue.clear()
+                                isWriting = false
                                 Handler(Looper.getMainLooper()).post {
                                     onStatus("BLE Disconnected")
                                     onConnectedStateChange(false)
@@ -127,6 +137,15 @@ object RobotBleController {
                                     }
                                 }
                             }
+                        }
+
+                        override fun onCharacteristicWrite(
+                            gatt: BluetoothGatt?,
+                            characteristic: BluetoothGattCharacteristic?,
+                            status: Int
+                        ) {
+                            isWriting = false
+                            processNextQueueItem()
                         }
                     }
 
@@ -157,22 +176,41 @@ object RobotBleController {
         }
     }
 
-    @SuppressLint("MissingPermission")
     fun sendBleCommand(command: String): Boolean {
-        val gatt = activeGatt ?: return false
-        val characteristic = rxChar ?: return false
-        return try {
-            val bytes = command.toByteArray()
+        if (!isConnected || rxChar == null) return false
+        commandQueue.offer(command.toByteArray())
+        processNextQueueItem()
+        return true
+    }
+
+    @Synchronized
+    @SuppressLint("MissingPermission")
+    private fun processNextQueueItem() {
+        if (isWriting || commandQueue.isEmpty()) return
+        val gatt = activeGatt ?: return
+        val characteristic = rxChar ?: return
+        val bytes = commandQueue.poll() ?: return
+
+        isWriting = true
+        try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == 0
+                val res = gatt.writeCharacteristic(characteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
+                if (res != 0) {
+                    isWriting = false
+                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 15)
+                }
             } else {
                 characteristic.value = bytes
                 characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                gatt.writeCharacteristic(characteristic)
+                val success = gatt.writeCharacteristic(characteristic)
+                if (!success) {
+                    isWriting = false
+                    Handler(Looper.getMainLooper()).postDelayed({ processNextQueueItem() }, 15)
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to send BLE command", e)
-            false
+            Log.e(TAG, "Error executing BLE write", e)
+            isWriting = false
         }
     }
 
@@ -184,6 +222,8 @@ object RobotBleController {
         } catch (e: Exception) {}
         activeGatt = null
         rxChar = null
+        commandQueue.clear()
+        isWriting = false
         isConnected = false
     }
 }

@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private var lastHatX = 0f
     private var lastHatY = 0f
     private var lastClawAngle = -1
+    private var lastBleTransmitTime = 0L
 
     var currentTargetIp: String = "192.168.4.1"
 
@@ -96,43 +97,43 @@ class MainActivity : ComponentActivity() {
 
         if (isGamepad && event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
-                // Switch Pro B Button (Stop Robot / Close Claw)
+                // Switch Pro B Button (Close Claw / Stop Robot)
                 KeyEvent.KEYCODE_BUTTON_B -> {
                     dispatchClawCommand("close")
                     dispatchRobotAction("stop")
                     return true
                 }
-                // Switch Pro A Button (Stand Robot / Open Claw)
+                // Switch Pro A Button (Open Claw / Stand Robot)
                 KeyEvent.KEYCODE_BUTTON_A -> {
                     dispatchClawCommand("open")
                     dispatchRobotAction("stand")
                     return true
                 }
-                // Switch Pro Y Button (Sit Robot / Half Open Claw)
+                // Switch Pro Y Button (Half Open Claw / Sit Robot)
                 KeyEvent.KEYCODE_BUTTON_Y -> {
                     dispatchClawCommand("half_open")
                     dispatchRobotAction("sit")
                     return true
                 }
-                // Switch Pro X Button (Leap Robot / Half Close Claw)
+                // Switch Pro X Button (Half Close Claw / Leap Robot)
                 KeyEvent.KEYCODE_BUTTON_X -> {
                     dispatchClawCommand("half_close")
                     dispatchRobotAction("leap_forward")
                     return true
                 }
-                // Switch Pro L Button (Stretch Down)
+                // Switch Pro L Button (Open Claw / Stretch Down)
                 KeyEvent.KEYCODE_BUTTON_L1 -> {
                     dispatchClawCommand("open")
                     dispatchRobotAction("stretch_down")
                     return true
                 }
-                // Switch Pro R Button (Stretch Back)
+                // Switch Pro R Button (Close Claw / Stretch Back)
                 KeyEvent.KEYCODE_BUTTON_R1 -> {
                     dispatchClawCommand("close")
                     dispatchRobotAction("stretch_back")
                     return true
                 }
-                // Switch Pro ZL Button (Crawl)
+                // Switch Pro ZL Button (Half Open Claw / Crawl)
                 KeyEvent.KEYCODE_BUTTON_L2 -> {
                     dispatchClawCommand("half_open")
                     dispatchRobotAction("crawl")
@@ -175,15 +176,16 @@ class MainActivity : ComponentActivity() {
             val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
 
             // Smooth Analog Joystick Control for Claw Angle (0 to 180 degrees)
-            // Push UP (axisY = -1.0) -> 180 degrees (Fully Open)
-            // Center (axisY = 0.0)   -> 90 degrees (Half Open)
-            // Push DOWN (axisY = 1.0) -> 0 degrees (Fully Closed)
             val mappedAngle = (((1.0f - axisY) / 2.0f) * 180f).toInt().coerceIn(0, 180)
+            val currentTime = System.currentTimeMillis()
 
-            // Only transmit if the angle changed by at least 3 degrees (prevents network flood)
-            if (Math.abs(mappedAngle - lastClawAngle) >= 3) {
-                lastClawAngle = mappedAngle
-                dispatchClawAngle(mappedAngle)
+            // Rate-limited transmission (max 25Hz / 40ms interval) to prevent BLE buffer drops
+            if (Math.abs(mappedAngle - lastClawAngle) >= 3 || (currentTime - lastBleTransmitTime) >= 40) {
+                if (mappedAngle != lastClawAngle) {
+                    lastClawAngle = mappedAngle
+                    lastBleTransmitTime = currentTime
+                    dispatchClawAngle(mappedAngle)
+                }
             }
 
             // D-Pad Hat Motion
@@ -253,7 +255,6 @@ class MainActivity : ComponentActivity() {
                 conn.responseCode
                 conn.disconnect()
             } catch (e: Exception) {
-                // Handled gracefully if Wi-Fi endpoint is offline
             }
         }
     }
