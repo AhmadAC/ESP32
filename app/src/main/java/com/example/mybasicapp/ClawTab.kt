@@ -46,7 +46,7 @@ fun ClawTab(
         // Claw Motion Controls Card
         CardContainer(title = "Claw Controls") {
             Row(modifier = Modifier.fillMaxWidth()) {
-                HtmlButton("Open (180)", BtnGreen, Modifier.weight(1f).padding(4.dp)) { onClawCommand("open") }
+                HtmlButton("Open (138)", BtnGreen, Modifier.weight(1f).padding(4.dp)) { onClawCommand("open") }
                 HtmlButton("Close (0)", BtnRed, Modifier.weight(1f).padding(4.dp)) { onClawCommand("close") }
             }
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -55,13 +55,13 @@ fun ClawTab(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-            var sliderValue by remember { mutableStateOf(90f) }
+            var sliderValue by remember { mutableStateOf(0f) }
             Text("Claw Angle: ${sliderValue.toInt()}°", color = TextColor)
             Slider(
                 value = sliderValue,
                 onValueChange = { sliderValue = it },
                 onValueChangeFinished = { onClawAngle(sliderValue.toInt()) },
-                valueRange = 0f..180f,
+                valueRange = 0f..138f,
                 colors = SliderDefaults.colors(thumbColor = PrimaryColor, activeTrackColor = PrimaryColor)
             )
         }

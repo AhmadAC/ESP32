@@ -39,13 +39,12 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     val context = LocalContext.current
     
     var isPolling by remember { mutableStateOf(false) }
-    var isHttpConnected by remember { mutableStateOf(false) }
     var isBleConnected by remember { mutableStateOf(false) }
     var bleStatusText by remember { mutableStateOf("BLE Idle") }
     var isStealthMode by remember { mutableStateOf(false) }
     var currentDevMode by remember { mutableStateOf("robot") }
     
-    val isOnline = isHttpConnected || isBleConnected
+    val isOnline = isPolling || isBleConnected
 
     var sensorEnabled by remember { mutableStateOf(false) }
     var sensorDistance by remember { mutableStateOf(0.0) }
@@ -126,7 +125,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     LaunchedEffect(isPolling, ipAddress) {
         if (isPolling) {
             while (true) {
-                var successfulPoll = false
                 try {
                     val url = URL("http://${ipAddress}/angles")
                     withContext(Dispatchers.IO) {
@@ -136,7 +134,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         connection.readTimeout = 2000
                         
                         if (connection.responseCode == 200) {
-                            successfulPoll = true
                             val response = connection.inputStream.bufferedReader().use { it.readText() }
                             val json = JSONObject(response)
                             
@@ -178,12 +175,8 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                     }
                 } catch (e: Exception) {
                 }
-                
-                isHttpConnected = successfulPoll
                 delay(800)
             }
-        } else {
-            isHttpConnected = false
         }
     }
 
@@ -334,15 +327,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             RobotBleController.connectToRobot(
                                 context = context,
                                 onStatus = { status -> bleStatusText = status },
-                                onConnectedStateChange = { connected -> isBleConnected = connected },
-                                onIpReceived = { ip -> 
-                                    ipAddress = ip
-                                    AppNetworkManager.targetIp = ip
-                                    if (!isPolling) {
-                                        isPolling = true 
-                                    }
-                                    Toast.makeText(context, "IP Acquired from BLE: $ip", Toast.LENGTH_SHORT).show()
-                                }
+                                onConnectedStateChange = { connected -> isBleConnected = connected }
                             )
                         }
                     },
@@ -418,10 +403,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
-                        isHttpConnected && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
+                        isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
                         isBleConnected -> "Connected [Online (BLE + Gamepad Active)]"
-                        isHttpConnected -> "Connected [Online (Wi-Fi HTTP)]"
-                        isPolling -> "Connecting... [Polling HTTP]"
+                        isPolling -> "Connected [Online (Wi-Fi HTTP)]"
                         else -> "Searching for ESP Robot [Offline]"
                     },
                     color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
@@ -578,6 +562,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             }
         }
 
+        // Pure OLED Black Screen Overlay for 0mW Stealth Mode
         if (isStealthMode) {
             Box(
                 modifier = Modifier

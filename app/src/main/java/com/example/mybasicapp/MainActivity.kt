@@ -177,7 +177,7 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    // Intercept Left Joystick Motion for Tactile Spring-Loaded Claw Control
+    // Intercept Left Joystick Motion for Precision Tactile Claw Control
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if ((event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK &&
             event.action == MotionEvent.ACTION_MOVE) {
@@ -187,23 +187,27 @@ class MainActivity : ComponentActivity() {
             val axisX = event.getAxisValue(MotionEvent.AXIS_X)
             val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
 
-            // Tactile Spring-Loaded Control:
-            // - Deflection UP (-axisY): Opens claw proportionally (0 to 180 degrees)
-            // - Release / Neutral: Reverts back to 0 degrees (Closed / Resting)
-            if (axisY < -0.1f) {
+            // Tactile Spring-Loaded Control with Quadratic Precision Easing
+            if (axisY < -0.05f) { // Slightly smaller deadzone for smoother engagement
                 isJoystickActive = true
-                val openProportion = (-axisY).coerceIn(0f, 1f)
-                val targetAngle = (openProportion * 180f).toInt()
+                val rawProportion = (-axisY).coerceIn(0f, 1f)
+                
+                // QUADRATIC CURVE: Desensitizes the middle of the joystick travel.
+                // A 50% physical stick push only opens the claw 25%, granting immense 
+                // precision for small, careful grabs. Pushing to 100% still gives the full 138 deg.
+                val precisionProportion = rawProportion * rawProportion
+                val targetAngle = (precisionProportion * 138f).toInt()
                 val currentTime = System.currentTimeMillis()
 
-                if (Math.abs(targetAngle - lastClawAngle) >= 3 || (currentTime - lastBleTransmitTime) >= 35) {
+                // High-resolution update rate: Reduced change threshold to 1 degree for buttery smooth movement
+                if (Math.abs(targetAngle - lastClawAngle) >= 1 || (currentTime - lastBleTransmitTime) >= 30) {
                     if (targetAngle != lastClawAngle) {
                         lastClawAngle = targetAngle
                         lastBleTransmitTime = currentTime
                         dispatchClawAngle(targetAngle)
                     }
                 }
-            } else if (isJoystickActive && Math.abs(axisY) <= 0.1f) {
+            } else if (isJoystickActive && Math.abs(axisY) <= 0.05f) {
                 // Revert claw back to resting position (0 deg) when joystick is released
                 isJoystickActive = false
                 lastClawAngle = 0
