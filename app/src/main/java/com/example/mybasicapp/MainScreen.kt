@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
 import android.app.Activity
@@ -70,7 +69,18 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     var pendingServoPayload by remember { mutableStateOf<JSONObject?>(null) }
     var notifyOnTrip by remember { mutableStateOf(true) }
 
-    // Synchronize IP Address globally for background Gamepad HTTP requests
+    val tabs = listOf("Wi-Fi Setup", "Robot & Audio", "Claw", "Camera", "PyCar")
+    val pagerState = rememberPagerState(pageCount = { 5 })
+
+    // Dynamically Route PyCar specific network traffic commands
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage == 4) {
+            AppNetworkManager.activeDeviceMode = "PyCar"
+        } else {
+            AppNetworkManager.activeDeviceMode = "Robot"
+        }
+    }
+
     LaunchedEffect(ipAddress) {
         AppNetworkManager.targetIp = ipAddress
     }
@@ -82,20 +92,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
         }
         
         if (isPolling) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
-                    val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
-                    val url = URL("http://${ipAddress}${endpoint}")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.doOutput = true
-                    OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
-                    conn.responseCode
-                    conn.disconnect()
-                } catch (e: Exception) {}
-            }
+            val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
+            val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
+            AppNetworkManager.sendHttpAsync(endpoint, true, payload)
         }
     }
 
@@ -106,24 +105,13 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 RobotBleController.sendBleCommand(it.toString())
             }
             if (isPolling) {
-                try {
-                    val url = URL("http://${ipAddress}/servo")
-                    withContext(Dispatchers.IO) {
-                        val conn = url.openConnection() as HttpURLConnection
-                        conn.requestMethod = "POST"
-                        conn.setRequestProperty("Content-Type", "application/json")
-                        conn.doOutput = true
-                        OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
-                        conn.responseCode
-                        conn.disconnect()
-                    }
-                } catch (e: Exception) {}
+                AppNetworkManager.sendHttpAsync("/servo", true, it)
             }
         }
     }
 
     LaunchedEffect(isPolling, ipAddress) {
-        if (isPolling) {
+        if (isPolling && AppNetworkManager.activeDeviceMode == "Robot") {
             while (true) {
                 try {
                     val url = URL("http://${ipAddress}/angles")
@@ -191,20 +179,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             }
         }
         if (isPolling) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val url = URL("http://${ipAddress}${endpoint}")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.responseCode
-                    conn.disconnect()
-                } catch (e: Exception) {}
-            }
+            AppNetworkManager.sendHttpAsync(endpoint, false, null)
         }
     }
-
-    val pagerState = rememberPagerState(pageCount = { 4 })
-    val tabs = listOf("Wi-Fi Setup", "Robot & Audio", "Claw", "Camera")
 
     Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -263,7 +240,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                     ipAddress = udpIp
                                     AppNetworkManager.targetIp = udpIp
                                     isPolling = true
-                                    Toast.makeText(context, "Found Robot via UDP!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Found Device via UDP!", Toast.LENGTH_SHORT).show()
                                     isScanningSubnet = false
                                     return@launch
                                 }
@@ -275,7 +252,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                                         ipAddress = mdnsIp
                                         AppNetworkManager.targetIp = mdnsIp
                                         isPolling = true
-                                        Toast.makeText(context, "Found Robot via mDNS!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Found Device via mDNS!", Toast.LENGTH_SHORT).show()
                                         isScanningSubnet = false
                                     }
                                 }
@@ -406,7 +383,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
                         isBleConnected -> "Connected [Online (BLE + Gamepad Active)]"
                         isPolling -> "Connected [Online (Wi-Fi HTTP)]"
-                        else -> "Searching for ESP Robot [Offline]"
+                        else -> "Searching for Device [Offline]"
                     },
                     color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
                     fontWeight = FontWeight.Bold,
@@ -530,7 +507,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         },
                         onAudioCommand = { endpoint, payload -> dispatchCommand(endpoint, payload) },
                         onWalkieTalkie = {
-                            Toast.makeText(context, "Mic Transmitting to Robot...", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Mic Transmitting...", Toast.LENGTH_SHORT).show()
                         }
                     )
                     2 -> ClawTab(
@@ -551,12 +528,17 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             currentDevMode = mode
                             val json = JSONObject().apply { put("mode", mode) }
                             dispatchCommand("/switch_mode", json)
-                            Toast.makeText(context, "Switching to ${mode.uppercase()} mode... Rebooting ESP32...", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Switching to ${mode.uppercase()} mode... Rebooting...", Toast.LENGTH_LONG).show()
                         }
                     )
                     3 -> CameraTab(
                         ipAddress = ipAddress,
                         onFlipCamera = { dispatchCommand("/cam_flip", JSONObject()) }
+                    )
+                    4 -> PyCarTab(
+                        onCommand = { payload -> 
+                            dispatchCommand("/", payload) 
+                        }
                     )
                 }
             }

@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.HttpURLConnection
@@ -44,6 +45,33 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 object AppNetworkManager {
     var targetIp: String = "192.168.4.1"
+    var activeDeviceMode: String = "Robot"
+
+    fun sendHttpAsync(endpoint: String, isPost: Boolean, payload: JSONObject? = null) {
+        Thread {
+            try {
+                // PyCar registers its HTTP_POST handler on "/*". Force posts to "/" when in PyCar mode.
+                val actualEndpoint = if (activeDeviceMode == "PyCar" && isPost) "/" else endpoint
+                val url = URL("http://${targetIp}${actualEndpoint}")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 800
+                conn.readTimeout = 800
+                if (isPost) {
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    payload?.let {
+                        java.io.OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
+                    }
+                } else {
+                    conn.requestMethod = "GET"
+                }
+                conn.responseCode
+                conn.disconnect()
+            } catch (e: Exception) {
+            }
+        }.start()
+    }
 }
 
 object RobotBleController {
@@ -85,7 +113,7 @@ object RobotBleController {
             return
         }
 
-        onStatus("Scanning BLE for ESPRobot...")
+        onStatus("Scanning BLE for Device...")
 
         val scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -95,7 +123,7 @@ object RobotBleController {
                     result.scanRecord?.deviceName
                 }
 
-                if (name == "ESPRobot" || name == "pyCar") {
+                if (name?.contains("ESPRobot", true) == true || name?.contains("pyCar", true) == true || name?.contains("Robot", true) == true) {
                     try { scanner.stopScan(this) } catch (e: Exception) {}
                     onStatus("Found $name! Connecting...")
 
@@ -168,7 +196,7 @@ object RobotBleController {
                                 val ip = String(value).replace("\u0000", "").trim()
                                 if (ip != "0.0.0.0" && ip.isNotEmpty()) {
                                     Handler(Looper.getMainLooper()).post {
-                                        onStatus("Robot IP Acquired: $ip")
+                                        onStatus("Device IP Acquired: $ip")
                                         onIpReceived?.invoke(ip)
                                     }
                                 }
@@ -402,10 +430,10 @@ fun setupRobotViaBLE(
                         result.scanRecord?.deviceName
                     }
 
-                    if ((name == "ESPRobot" || name == "pyCar") && !isConnecting) {
+                    if ((name?.contains("ESPRobot", true) == true || name?.contains("pyCar", true) == true) && !isConnecting) {
                         isConnecting = true
                         try { scanner.stopScan(this) } catch (e: Exception) {}
-                        onStatus("Found Robot! Connecting...")
+                        onStatus("Found Device! Connecting...")
 
                         val gattCallback = object : BluetoothGattCallback() {
                             override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -426,7 +454,7 @@ fun setupRobotViaBLE(
                                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                                         isPollingIp = false
                                         if (isConnecting) {
-                                            Handler(Looper.getMainLooper()).post { onStatus("Disconnected from robot.") }
+                                            Handler(Looper.getMainLooper()).post { onStatus("Disconnected from device.") }
                                         }
                                         try { gatt.close() } catch (e: Exception) {}
                                         isConnecting = false
@@ -568,7 +596,7 @@ fun setupRobotViaBLE(
         Handler(Looper.getMainLooper()).postDelayed({
             if (!isConnecting) {
                 try { scanner.stopScan(scanCallback) } catch (e: Exception) {}
-                onStatus("Scan Timed Out. Is the robot near?")
+                onStatus("Scan Timed Out. Is the device near?")
             }
         }, 10000)
 

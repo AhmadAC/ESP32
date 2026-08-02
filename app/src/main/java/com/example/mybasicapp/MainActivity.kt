@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/mybasicapp/MainActivity.kt
 package com.example.mybasicapp
 
 import android.Manifest
@@ -34,6 +33,13 @@ class MainActivity : ComponentActivity() {
     private var hasLocationPermission by mutableStateOf(false)
     private var hasBluetoothPermission by mutableStateOf(false)
 
+    // Used for PyCar Gamepad Joystick State Tracking
+    private var lastLx = 128
+    private var lastLy = 128
+    private var lastRx = 128
+    private var lastRy = 128
+
+    // Used for Robot Gamepad Joystick State Tracking
     private var lastAxisX = 0f
     private var lastAxisY = 0f
     private var lastHatX = 0f
@@ -107,150 +113,208 @@ class MainActivity : ComponentActivity() {
         val isGamepad = (event.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                         (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
-        if (isGamepad && event.action == KeyEvent.ACTION_DOWN) {
-            when (event.keyCode) {
-                // Switch Pro B Button (Close Claw / Stop Robot)
-                KeyEvent.KEYCODE_BUTTON_B -> {
-                    dispatchClawCommand("close")
-                    dispatchRobotAction("stop")
-                    return true
+        if (isGamepad) {
+            if (AppNetworkManager.activeDeviceMode == "PyCar") {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when (event.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP -> { dispatchPyCarCommand("forward"); return true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { dispatchPyCarCommand("backward"); return true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { dispatchPyCarCommand("left"); return true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { dispatchPyCarCommand("right"); return true }
+                        KeyEvent.KEYCODE_BUTTON_B -> { dispatchPyCarCommand("stop"); return true }
+                        KeyEvent.KEYCODE_BUTTON_A -> { dispatchPyCarCommand("light"); return true }
+                        KeyEvent.KEYCODE_BUTTON_Y -> { dispatchPyCarCommand("line"); return true }
+                    }
+                } else if (event.action == KeyEvent.ACTION_UP) {
+                    when (event.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, 
+                        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            dispatchPyCarCommand("stop")
+                            return true
+                        }
+                    }
                 }
-                // Switch Pro A Button (Open Claw / Stand Robot)
-                KeyEvent.KEYCODE_BUTTON_A -> {
-                    dispatchClawCommand("open")
-                    dispatchRobotAction("stand")
-                    return true
-                }
-                // Switch Pro Y Button (Half Open Claw / Sit Robot)
-                KeyEvent.KEYCODE_BUTTON_Y -> {
-                    dispatchClawCommand("half_open")
-                    dispatchRobotAction("sit")
-                    return true
-                }
-                // Switch Pro X Button (Half Close Claw / Leap Robot)
-                KeyEvent.KEYCODE_BUTTON_X -> {
-                    dispatchClawCommand("half_close")
-                    dispatchRobotAction("leap_forward")
-                    return true
-                }
-                // Switch Pro L Button (Open Claw / Stretch Down)
-                KeyEvent.KEYCODE_BUTTON_L1 -> {
-                    dispatchClawCommand("open")
-                    dispatchRobotAction("stretch_down")
-                    return true
-                }
-                // Switch Pro R Button (Close Claw / Stretch Back)
-                KeyEvent.KEYCODE_BUTTON_R1 -> {
-                    dispatchClawCommand("close")
-                    dispatchRobotAction("stretch_back")
-                    return true
-                }
-                // Switch Pro ZL Button (Half Open Claw / Crawl)
-                KeyEvent.KEYCODE_BUTTON_L2 -> {
-                    dispatchClawCommand("half_open")
-                    dispatchRobotAction("crawl")
-                    return true
-                }
-                // D-Pad Controls
-                KeyEvent.KEYCODE_DPAD_UP -> {
-                    dispatchClawCommand("open")
-                    dispatchRobotAction("forward")
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    dispatchClawCommand("close")
-                    dispatchRobotAction("backward")
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    dispatchClawCommand("half_open")
-                    dispatchRobotAction("left_wave")
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    dispatchClawCommand("half_close")
-                    dispatchRobotAction("right_wave")
-                    return true
+                return super.dispatchKeyEvent(event)
+            } else {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when (event.keyCode) {
+                        // Switch Pro B Button (Close Claw / Stop Robot)
+                        KeyEvent.KEYCODE_BUTTON_B -> {
+                            dispatchClawCommand("close")
+                            dispatchRobotAction("stop")
+                            return true
+                        }
+                        // Switch Pro A Button (Open Claw / Stand Robot)
+                        KeyEvent.KEYCODE_BUTTON_A -> {
+                            dispatchClawCommand("open")
+                            dispatchRobotAction("stand")
+                            return true
+                        }
+                        // Switch Pro Y Button (Half Open Claw / Sit Robot)
+                        KeyEvent.KEYCODE_BUTTON_Y -> {
+                            dispatchClawCommand("half_open")
+                            dispatchRobotAction("sit")
+                            return true
+                        }
+                        // Switch Pro X Button (Half Close Claw / Leap Robot)
+                        KeyEvent.KEYCODE_BUTTON_X -> {
+                            dispatchClawCommand("half_close")
+                            dispatchRobotAction("leap_forward")
+                            return true
+                        }
+                        // Switch Pro L Button (Open Claw / Stretch Down)
+                        KeyEvent.KEYCODE_BUTTON_L1 -> {
+                            dispatchClawCommand("open")
+                            dispatchRobotAction("stretch_down")
+                            return true
+                        }
+                        // Switch Pro R Button (Close Claw / Stretch Back)
+                        KeyEvent.KEYCODE_BUTTON_R1 -> {
+                            dispatchClawCommand("close")
+                            dispatchRobotAction("stretch_back")
+                            return true
+                        }
+                        // Switch Pro ZL Button (Half Open Claw / Crawl)
+                        KeyEvent.KEYCODE_BUTTON_L2 -> {
+                            dispatchClawCommand("half_open")
+                            dispatchRobotAction("crawl")
+                            return true
+                        }
+                        // D-Pad Controls
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            dispatchClawCommand("open")
+                            dispatchRobotAction("forward")
+                            return true
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            dispatchClawCommand("close")
+                            dispatchRobotAction("backward")
+                            return true
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            dispatchClawCommand("half_open")
+                            dispatchRobotAction("left_wave")
+                            return true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            dispatchClawCommand("half_close")
+                            dispatchRobotAction("right_wave")
+                            return true
+                        }
+                    }
                 }
             }
         }
         return super.dispatchKeyEvent(event)
     }
 
-    // Intercept Left Joystick Motion for Precision Tactile Claw Control
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if ((event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK &&
             event.action == MotionEvent.ACTION_MOVE) {
 
+            val axisX = event.getAxisValue(MotionEvent.AXIS_X)
+            val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
+            val rx = event.getAxisValue(MotionEvent.AXIS_Z)
+            val ry = event.getAxisValue(MotionEvent.AXIS_RZ)
             val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-            val axisX = event.getAxisValue(MotionEvent.AXIS_X)
-            val axisY = event.getAxisValue(MotionEvent.AXIS_Y) // Left Joystick Y-Axis
 
-            // Tactile Spring-Loaded Control with Quadratic Precision Easing
-            if (axisY < -0.05f) { // Slightly smaller deadzone for smoother engagement
-                isJoystickActive = true
-                val rawProportion = (-axisY).coerceIn(0f, 1f)
-                
-                // QUADRATIC CURVE: Desensitizes the middle of the joystick travel.
-                // A 50% physical stick push only opens the claw 25%, granting immense 
-                // precision for small, careful grabs. Pushing to 100% still gives the full 138 deg.
-                val precisionProportion = rawProportion * rawProportion
-                val targetAngle = (precisionProportion * 138f).toInt()
+            if (AppNetworkManager.activeDeviceMode == "PyCar") {
+                val lxInt = ((axisX + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val lyInt = ((axisY + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val rxInt = ((rx + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val ryInt = ((ry + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+
                 val currentTime = System.currentTimeMillis()
-
-                // High-resolution update rate: Reduced change threshold to 1 degree for buttery smooth movement
-                if (Math.abs(targetAngle - lastClawAngle) >= 1 || (currentTime - lastBleTransmitTime) >= 30) {
-                    if (targetAngle != lastClawAngle) {
-                        lastClawAngle = targetAngle
-                        lastBleTransmitTime = currentTime
-                        dispatchClawAngle(targetAngle)
+                if (Math.abs(lxInt - lastLx) > 5 || Math.abs(lyInt - lastLy) > 5 || 
+                    Math.abs(rxInt - lastRx) > 5 || Math.abs(ryInt - lastRy) > 5 || 
+                    (currentTime - lastBleTransmitTime) > 50) {
+                    
+                    lastLx = lxInt; lastLy = lyInt; lastRx = rxInt; lastRy = ryInt
+                    lastBleTransmitTime = currentTime
+                    
+                    val json = JSONObject().apply {
+                        put("lx", lxInt)
+                        put("ly", lyInt)
+                        put("rx", rxInt)
+                        put("ry", ryInt)
+                        put("btns", 8) // D-pad neutral
                     }
+                    if (RobotBleController.isConnected) {
+                        RobotBleController.sendBleCommand(json.toString())
+                    }
+                    AppNetworkManager.sendHttpAsync("/", true, json)
                 }
-            } else if (isJoystickActive && Math.abs(axisY) <= 0.05f) {
-                // Revert claw back to resting position (0 deg) when joystick is released
-                isJoystickActive = false
-                lastClawAngle = 0
-                dispatchClawAngle(0)
+                return true
+            } else {
+                // Tactile Spring-Loaded Control for Robot Claw
+                if (axisY < -0.05f) {
+                    isJoystickActive = true
+                    val rawProportion = (-axisY).coerceIn(0f, 1f)
+                    
+                    // QUADRATIC CURVE
+                    val precisionProportion = rawProportion * rawProportion
+                    val targetAngle = (precisionProportion * 138f).toInt()
+                    val currentTime = System.currentTimeMillis()
+
+                    if (Math.abs(targetAngle - lastClawAngle) >= 1 || (currentTime - lastBleTransmitTime) >= 30) {
+                        if (targetAngle != lastClawAngle) {
+                            lastClawAngle = targetAngle
+                            lastBleTransmitTime = currentTime
+                            dispatchClawAngle(targetAngle)
+                        }
+                    }
+                } else if (isJoystickActive && Math.abs(axisY) <= 0.05f) {
+                    isJoystickActive = false
+                    lastClawAngle = 0
+                    dispatchClawAngle(0)
+                }
+
+                // D-Pad Hat Motion fallback
+                if (hatY < -0.5f && lastHatY >= -0.5f) {
+                    dispatchClawCommand("open")
+                    dispatchRobotAction("forward")
+                } else if (hatY > 0.5f && lastHatY <= 0.5f) {
+                    dispatchClawCommand("close")
+                    dispatchRobotAction("backward")
+                } else if (hatX < -0.5f && lastHatX >= -0.5f) {
+                    dispatchClawCommand("half_open")
+                    dispatchRobotAction("left_wave")
+                } else if (hatX > 0.5f && lastHatX <= 0.5f) {
+                    dispatchClawCommand("half_close")
+                    dispatchRobotAction("right_wave")
+                }
+
+                lastHatX = hatX
+                lastHatY = hatY
+                lastAxisX = axisX
+                lastAxisY = axisY
+                return true
             }
-
-            // D-Pad Hat Motion
-            if (hatY < -0.5f && lastHatY >= -0.5f) {
-                dispatchClawCommand("open")
-                dispatchRobotAction("forward")
-            } else if (hatY > 0.5f && lastHatY <= 0.5f) {
-                dispatchClawCommand("close")
-                dispatchRobotAction("backward")
-            } else if (hatX < -0.5f && lastHatX >= -0.5f) {
-                dispatchClawCommand("half_open")
-                dispatchRobotAction("left_wave")
-            } else if (hatX > 0.5f && lastHatX <= 0.5f) {
-                dispatchClawCommand("half_close")
-                dispatchRobotAction("right_wave")
-            }
-
-            lastHatX = hatX
-            lastHatY = hatY
-            lastAxisX = axisX
-            lastAxisY = axisY
-
-            return true
         }
         return super.dispatchGenericMotionEvent(event)
+    }
+
+    private fun dispatchPyCarCommand(act: String) {
+        val json = JSONObject().apply { put("action", act) }
+        if (RobotBleController.isConnected) {
+            RobotBleController.sendBleCommand(json.toString())
+        }
+        AppNetworkManager.sendHttpAsync("/", true, json)
     }
 
     private fun dispatchClawCommand(command: String) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("claw:$command")
         }
-        sendHttpAsync("/claw?cmd=$command", isPost = false)
+        AppNetworkManager.sendHttpAsync("/claw?cmd=$command", isPost = false)
     }
 
     private fun dispatchClawAngle(angle: Int) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("claw_angle:$angle")
         }
-        sendHttpAsync("/claw?angle=$angle", isPost = false)
+        AppNetworkManager.sendHttpAsync("/claw?angle=$angle", isPost = false)
     }
 
     private fun dispatchRobotAction(action: String) {
@@ -258,32 +322,7 @@ class MainActivity : ComponentActivity() {
             RobotBleController.sendBleCommand("action:$action")
         }
         val json = JSONObject().apply { put("action", action) }
-        sendHttpAsync("/action", isPost = true, payload = json)
-    }
-
-    private fun sendHttpAsync(endpoint: String, isPost: Boolean, payload: JSONObject? = null) {
-        thread {
-            try {
-                val ip = AppNetworkManager.targetIp
-                val url = URL("http://${ip}${endpoint}")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 1000
-                conn.readTimeout = 1000
-                if (isPost) {
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.doOutput = true
-                    payload?.let {
-                        OutputStreamWriter(conn.outputStream).use { writer -> writer.write(it.toString()) }
-                    }
-                } else {
-                    conn.requestMethod = "GET"
-                }
-                conn.responseCode
-                conn.disconnect()
-            } catch (e: Exception) {
-            }
-        }
+        AppNetworkManager.sendHttpAsync("/action", isPost = true, payload = json)
     }
 
     private fun createNotificationChannel() {
