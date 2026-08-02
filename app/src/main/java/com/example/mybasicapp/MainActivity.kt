@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/mybasicapp/MainActivity.kt
 package com.example.mybasicapp
 
 import android.Manifest
@@ -226,9 +227,18 @@ class MainActivity : ComponentActivity() {
                 val ryInt = ((ry + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
 
                 val currentTime = System.currentTimeMillis()
-                if (Math.abs(lxInt - lastLx) > 5 || Math.abs(lyInt - lastLy) > 5 || 
-                    Math.abs(rxInt - lastRx) > 5 || Math.abs(ryInt - lastRy) > 5 || 
-                    (currentTime - lastBleTransmitTime) > 50) {
+                
+                // Deadzone check: True if ALL axes are centered
+                val isCenter = (lxInt in 120..136 && lyInt in 120..136 && rxInt in 120..136 && ryInt in 120..136)
+                
+                // Has the user actively moved the joystick significantly since last check?
+                val axesChanged = Math.abs(lxInt - lastLx) > 5 || Math.abs(lyInt - lastLy) > 5 || 
+                                  Math.abs(rxInt - lastRx) > 5 || Math.abs(ryInt - lastRy) > 5
+
+                // Only send data if the axes actively changed, OR if they are currently being held outside 
+                // the deadzone and 50ms have elapsed. This prevents the app from spamming idle data 
+                // and instantly overriding on-screen buttons!
+                if (axesChanged || (!isCenter && (currentTime - lastBleTransmitTime) > 50)) {
                     
                     lastLx = lxInt; lastLy = lyInt; lastRx = rxInt; lastRy = ryInt
                     lastBleTransmitTime = currentTime
