@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/mybasicapp/NetworkUtils.kt
 package com.example.mybasicapp
 
 import android.annotation.SuppressLint
@@ -102,6 +103,15 @@ object RobotBleController {
         val adapter = manager?.adapter
         if (adapter == null || !adapter.isEnabled) {
             onStatus("Bluetooth Disabled")
+            onConnectedStateChange(false)
+            return
+        }
+
+        // GPS Check. Location must be enabled system-wide to scan for BLE on Android
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val isGpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+        if (!isGpsEnabled) {
+            onStatus("Location/GPS must be ON for BLE Scan!")
             onConnectedStateChange(false)
             return
         }

@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
 import android.app.Activity
@@ -91,11 +92,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             RobotBleController.sendBleCommand(cmd)
         }
         
-        if (isPolling) {
-            val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
-            val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
-            AppNetworkManager.sendHttpAsync(endpoint, true, payload)
-        }
+        // Unconditional HTTP dispatch ensures AP Mode control works without manual HTTP toggling
+        val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
+        val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
+        AppNetworkManager.sendHttpAsync(endpoint, true, payload)
     }
 
     LaunchedEffect(pendingServoPayload) {
@@ -104,9 +104,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             if (RobotBleController.isConnected) {
                 RobotBleController.sendBleCommand(it.toString())
             }
-            if (isPolling) {
-                AppNetworkManager.sendHttpAsync("/servo", true, it)
-            }
+            AppNetworkManager.sendHttpAsync("/servo", true, it)
         }
     }
 
@@ -178,9 +176,7 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 RobotBleController.sendBleCommand("claw_angle:$angleValue")
             }
         }
-        if (isPolling) {
-            AppNetworkManager.sendHttpAsync(endpoint, false, null)
-        }
+        AppNetworkManager.sendHttpAsync(endpoint, false, null)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
@@ -300,7 +296,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                             RobotBleController.disconnect()
                             isBleConnected = false
                             bleStatusText = "BLE Disconnected"
+                            Toast.makeText(context, "Disconnecting BLE...", Toast.LENGTH_SHORT).show()
                         } else {
+                            Toast.makeText(context, "Starting BLE Scan...", Toast.LENGTH_SHORT).show()
                             RobotBleController.connectToRobot(
                                 context = context,
                                 onStatus = { status -> bleStatusText = status },
@@ -380,10 +378,10 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
-                        isPolling && isBleConnected -> "Connected [Online (Wi-Fi + BLE)]"
-                        isBleConnected -> "Connected [Online (BLE + Gamepad Active)]"
-                        isPolling -> "Connected [Online (Wi-Fi HTTP)]"
-                        else -> "Searching for Device [Offline]"
+                        isPolling && isBleConnected -> "Connected [Wi-Fi + BLE] - $bleStatusText"
+                        isBleConnected -> "Connected [BLE] - $bleStatusText"
+                        isPolling -> "Connected [Wi-Fi HTTP] - $bleStatusText"
+                        else -> "Status: $bleStatusText"
                     },
                     color = if (isOnline) Color(0xFFD1FAE5) else Color(0xFFFEF3C7),
                     fontWeight = FontWeight.Bold,
