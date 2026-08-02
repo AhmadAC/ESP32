@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/mybasicapp/NetworkUtils.kt
 package com.example.mybasicapp
 
 import android.annotation.SuppressLint
@@ -96,9 +95,9 @@ object RobotBleController {
                     result.scanRecord?.deviceName
                 }
 
-                if (name == "ESPRobot") {
+                if (name == "ESPRobot" || name == "pyCar") {
                     try { scanner.stopScan(this) } catch (e: Exception) {}
-                    onStatus("Found ESPRobot! Connecting...")
+                    onStatus("Found $name! Connecting...")
 
                     val gattCallback = object : BluetoothGattCallback() {
                         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -112,7 +111,6 @@ object RobotBleController {
                                     onStatus("Connected via BLE!")
                                     onConnectedStateChange(true)
                                 }
-                                // Discover services FIRST before requesting MTU
                                 Handler(Looper.getMainLooper()).postDelayed({
                                     try { gatt.discoverServices() } catch (e: Exception) {}
                                 }, 300)
@@ -145,7 +143,6 @@ object RobotBleController {
                                     }
                                 }
 
-                                // Request higher MTU size (512 bytes) AFTER services are discovered
                                 Handler(Looper.getMainLooper()).postDelayed({
                                     try { gatt.requestMtu(512) } catch (e: Exception) {}
                                 }, 300)
@@ -209,7 +206,6 @@ object RobotBleController {
     fun sendBleCommand(command: String): Boolean {
         if (!isConnected || rxChar == null) return false
 
-        // Purge obsolete angle commands if a newer angle arrives
         if (command.startsWith("claw_angle:")) {
             commandQueue.removeIf { String(it).startsWith("claw_angle:") }
         }
@@ -246,7 +242,6 @@ object RobotBleController {
                         Log.e(TAG, "Error executing BLE write", e)
                     }
                 }
-                // Schedule next write in 12ms to allow physical BLE packet transmission
                 mainHandler.postDelayed(this, 12)
             } else {
                 isQueueProcessing = false
@@ -338,7 +333,7 @@ fun findRobotViaMDNS(context: Context, onIpFound: (String) -> Unit) {
     val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
             val currentListener = this
-            if (serviceInfo.serviceName.contains("ESP32 Robot", ignoreCase = true) || serviceInfo.serviceName.contains("robotdog", ignoreCase = true)) {
+            if (serviceInfo.serviceName.contains("ESP32 Robot", ignoreCase = true) || serviceInfo.serviceName.contains("robotdog", ignoreCase = true) || serviceInfo.serviceName.contains("pyCar", ignoreCase = true)) {
                 nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                     override fun onServiceResolved(resolvedService: NsdServiceInfo) {
                         resolvedService.host?.hostAddress?.let { ip ->
@@ -407,7 +402,7 @@ fun setupRobotViaBLE(
                         result.scanRecord?.deviceName
                     }
 
-                    if (name == "ESPRobot" && !isConnecting) {
+                    if ((name == "ESPRobot" || name == "pyCar") && !isConnecting) {
                         isConnecting = true
                         try { scanner.stopScan(this) } catch (e: Exception) {}
                         onStatus("Found Robot! Connecting...")
