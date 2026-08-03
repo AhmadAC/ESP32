@@ -139,49 +139,41 @@ class MainActivity : ComponentActivity() {
             } else {
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (event.keyCode) {
-                        // Switch Pro B Button (Close Claw / Stop Robot)
                         KeyEvent.KEYCODE_BUTTON_B -> {
                             dispatchClawCommand("close")
                             dispatchRobotAction("stop")
                             return true
                         }
-                        // Switch Pro A Button (Open Claw / Stand Robot)
                         KeyEvent.KEYCODE_BUTTON_A -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("stand")
                             return true
                         }
-                        // Switch Pro Y Button (Half Open Claw / Sit Robot)
                         KeyEvent.KEYCODE_BUTTON_Y -> {
                             dispatchClawCommand("half_open")
                             dispatchRobotAction("sit")
                             return true
                         }
-                        // Switch Pro X Button (Half Close Claw / Leap Robot)
                         KeyEvent.KEYCODE_BUTTON_X -> {
                             dispatchClawCommand("half_close")
                             dispatchRobotAction("leap_forward")
                             return true
                         }
-                        // Switch Pro L Button (Open Claw / Stretch Down)
                         KeyEvent.KEYCODE_BUTTON_L1 -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("stretch_down")
                             return true
                         }
-                        // Switch Pro R Button (Close Claw / Stretch Back)
                         KeyEvent.KEYCODE_BUTTON_R1 -> {
                             dispatchClawCommand("close")
                             dispatchRobotAction("stretch_back")
                             return true
                         }
-                        // Switch Pro ZL Button (Half Open Claw / Crawl)
                         KeyEvent.KEYCODE_BUTTON_L2 -> {
                             dispatchClawCommand("half_open")
                             dispatchRobotAction("crawl")
                             return true
                         }
-                        // D-Pad Controls
                         KeyEvent.KEYCODE_DPAD_UP -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("forward")
@@ -216,7 +208,7 @@ class MainActivity : ComponentActivity() {
             val axisX = event.getAxisValue(MotionEvent.AXIS_X)
             val axisY = event.getAxisValue(MotionEvent.AXIS_Y)
             val rx = event.getAxisValue(MotionEvent.AXIS_Z)
-            val ry = event.getAxisValue(MotionEvent.AXIS_RZ)
+            val ry = event.getAxisValue(MotionEvent.AXIS_RZ) 
             val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
 
@@ -228,27 +220,22 @@ class MainActivity : ComponentActivity() {
 
                 val currentTime = System.currentTimeMillis()
                 
-                // Deadzone check: True if ALL axes are centered
                 val isCenter = (lxInt in 120..136 && lyInt in 120..136 && rxInt in 120..136 && ryInt in 120..136)
-                
-                // Has the user actively moved the joystick significantly since last check?
                 val axesChanged = Math.abs(lxInt - lastLx) > 5 || Math.abs(lyInt - lastLy) > 5 || 
                                   Math.abs(rxInt - lastRx) > 5 || Math.abs(ryInt - lastRy) > 5
 
-                // Only send data if the axes actively changed, OR if they are currently being held outside 
-                // the deadzone and 50ms have elapsed. This prevents the app from spamming idle data 
-                // and instantly overriding on-screen buttons!
                 if (axesChanged || (!isCenter && (currentTime - lastBleTransmitTime) > 50)) {
                     
                     lastLx = lxInt; lastLy = lyInt; lastRx = rxInt; lastRy = ryInt
                     lastBleTransmitTime = currentTime
                     
+                    // Sending highly optimized 41 byte BLE joystick telemetry using short char mappings
                     val json = JSONObject().apply {
-                        put("lx", lxInt)
-                        put("ly", lyInt)
-                        put("rx", rxInt)
-                        put("ry", ryInt)
-                        put("btns", 8) // D-pad neutral
+                        put("x", lxInt)
+                        put("y", lyInt)
+                        put("z", rxInt)
+                        put("r", ryInt)
+                        put("b", 8) 
                     }
                     if (RobotBleController.isConnected) {
                         RobotBleController.sendBleCommand(json.toString())
@@ -258,12 +245,9 @@ class MainActivity : ComponentActivity() {
                 }
                 return true
             } else {
-                // Tactile Spring-Loaded Control for Robot Claw
                 if (axisY < -0.05f) {
                     isJoystickActive = true
                     val rawProportion = (-axisY).coerceIn(0f, 1f)
-                    
-                    // QUADRATIC CURVE
                     val precisionProportion = rawProportion * rawProportion
                     val targetAngle = (precisionProportion * 138f).toInt()
                     val currentTime = System.currentTimeMillis()
@@ -281,7 +265,6 @@ class MainActivity : ComponentActivity() {
                     dispatchClawAngle(0)
                 }
 
-                // D-Pad Hat Motion fallback
                 if (hatY < -0.5f && lastHatY >= -0.5f) {
                     dispatchClawCommand("open")
                     dispatchRobotAction("forward")
@@ -306,8 +289,22 @@ class MainActivity : ComponentActivity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
+    // Translates English strings to extremely lightweight integer codes 
     private fun dispatchPyCarCommand(act: String) {
-        val json = JSONObject().apply { put("action", act) }
+        val code = when(act) {
+            "stop" -> 1
+            "forward" -> 2
+            "backward", "back" -> 3
+            "left" -> 4
+            "right" -> 5
+            "light" -> 6
+            "line" -> 7
+            else -> 0
+        }
+        
+        // This generates `{"a":2}` (7 bytes) instead of `{"action":"forward"}` (20 bytes)!
+        val json = if (code > 0) JSONObject().apply { put("a", code) } else JSONObject().apply { put("action", act) }
+        
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand(json.toString())
         } else {
@@ -350,7 +347,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private void sendNotification(title: String, content: String) {
+    private fun sendNotification(title: String, content: String) {
         val builder = NotificationCompat.Builder(this, "SENSOR_CHANNEL")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)
