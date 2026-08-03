@@ -186,7 +186,11 @@ object RobotBleController {
                                 }
 
                                 Handler(Looper.getMainLooper()).postDelayed({
-                                    try { gatt.requestMtu(512) } catch (e: Exception) {}
+                                    try { 
+                                        gatt.requestMtu(512) 
+                                        // Request high priority connection to drastically lower the BLE interval to ~11-15ms for real-time gamepad polling
+                                        gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                                    } catch (e: Exception) {}
                                 }, 300)
                             }
                         }
@@ -195,7 +199,6 @@ object RobotBleController {
                             Log.i(TAG, "BLE MTU Negotiated: $mtu bytes")
                         }
 
-                        // Unlock the dispatcher as soon as the ESP32 hardware acknowledges the packet
                         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
                             isWritePending = false
                         }
@@ -257,6 +260,11 @@ object RobotBleController {
             commandQueue.removeIf { String(it).startsWith("claw_angle:") }
         }
 
+        // Anti-Lag: Purge older joystick packets waiting in the queue so the robot only gets the absolute freshest frame.
+        if (command.contains("\"x\":") && command.contains("\"y\":")) {
+            commandQueue.removeIf { String(it).contains("\"x\":") && String(it).contains("\"y\":") }
+        }
+
         commandQueue.offer(command.toByteArray())
         startQueueProcessing()
         return true
@@ -290,9 +298,8 @@ object RobotBleController {
                         isWritePending = true
                         lastWriteAttempt = System.currentTimeMillis()
 
-                        // Enforce WRITE_TYPE_DEFAULT so Android forces the ESP32 to send a hardware-level ACK. 
-                        // This guarantees 100% transmission success and fires onCharacteristicWrite immediately!
-                        val type = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                        // Use WRITE_TYPE_NO_RESPONSE for real-time telemetry streaming to prevent hardware ACK blocking
+                        val type = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                         
                         val success = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             gatt.writeCharacteristic(characteristic, bytes, type) == 0 // 0 == SUCCESS
