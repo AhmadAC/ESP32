@@ -1,3 +1,4 @@
+// BasicAPK/app/src/main/java/com/example/mybasicapp/PyCarTab.kt
 package com.example.mybasicapp
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -15,15 +16,15 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 
 @Composable
-fun PyCarDriveButton(text: String, action: String, modifier: Modifier = Modifier, onCommand: (JSONObject) -> Unit) {
+fun PyCarDriveButton(text: String, actionCode: Int, modifier: Modifier = Modifier, onCommand: (JSONObject) -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     LaunchedEffect(isPressed) {
         if (isPressed) {
-            onCommand(JSONObject().apply { put("action", action) })
+            onCommand(JSONObject().apply { put("a", actionCode) }) // Short numeric code to save MTU bytes
         } else {
-            onCommand(JSONObject().apply { put("action", "stop") })
+            onCommand(JSONObject().apply { put("a", 1) }) // 1 = stop
         }
     }
 
@@ -44,14 +45,17 @@ fun PyCarTab(onCommand: (JSONObject) -> Unit) {
         
         CardContainer(title = "PyCar Drive Controls") {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                PyCarDriveButton("Forward", "forward", Modifier.weight(1f).padding(4.dp), onCommand)
+                // 2 = Forward
+                PyCarDriveButton("Forward", 2, Modifier.weight(1f).padding(4.dp), onCommand)
             }
             Row(modifier = Modifier.fillMaxWidth()) {
-                PyCarDriveButton("Left", "left", Modifier.weight(1f).padding(4.dp), onCommand)
-                PyCarDriveButton("Right", "right", Modifier.weight(1f).padding(4.dp), onCommand)
+                // 4 = Left, 5 = Right
+                PyCarDriveButton("Left", 4, Modifier.weight(1f).padding(4.dp), onCommand)
+                PyCarDriveButton("Right", 5, Modifier.weight(1f).padding(4.dp), onCommand)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                PyCarDriveButton("Backward", "backward", Modifier.weight(1f).padding(4.dp), onCommand)
+                // 3 = Backward
+                PyCarDriveButton("Backward", 3, Modifier.weight(1f).padding(4.dp), onCommand)
             }
         }
         
@@ -59,11 +63,13 @@ fun PyCarTab(onCommand: (JSONObject) -> Unit) {
 
         CardContainer(title = "Hardware Features") {
             Row(modifier = Modifier.fillMaxWidth()) {
+                // 6 = Light Toggle
                 HtmlButton("Toggle Light", BtnGreen, Modifier.weight(1f).padding(4.dp)) {
-                    onCommand(JSONObject().apply { put("action", "light") })
+                    onCommand(JSONObject().apply { put("a", 6) })
                 }
+                // 7 = Line Follower
                 HtmlButton("Line Follower", BtnRed, Modifier.weight(1f).padding(4.dp)) {
-                    onCommand(JSONObject().apply { put("action", "line") })
+                    onCommand(JSONObject().apply { put("a", 7) })
                 }
             }
         }
