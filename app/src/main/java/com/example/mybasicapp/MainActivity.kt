@@ -1,4 +1,3 @@
-
 // app/src/main/java/com/example/mybasicapp/MainActivity.kt
 package com.example.mybasicapp
 
@@ -222,14 +221,17 @@ class MainActivity : ComponentActivity() {
             val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
 
             if (AppNetworkManager.activeDeviceMode == "PyCar") {
-                val lxInt = ((axisX + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
-                val lyInt = ((axisY + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
-                val rxInt = ((rx + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
-                val ryInt = ((ry + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                // Apply a 20% hardware deadzone to prevent Nintendo Switch analog stick drift
+                val deadzone = 0.20f
+                
+                val lxInt = if (Math.abs(axisX) < deadzone) 128 else ((axisX + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val lyInt = if (Math.abs(axisY) < deadzone) 128 else ((axisY + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val rxInt = if (Math.abs(rx) < deadzone) 128 else ((rx + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
+                val ryInt = if (Math.abs(ry) < deadzone) 128 else ((ry + 1.0f) * 127.5f).toInt().coerceIn(0, 255)
 
                 val currentTime = System.currentTimeMillis()
                 
-                val isCenter = (lxInt in 120..136 && lyInt in 120..136 && rxInt in 120..136 && ryInt in 120..136)
+                val isCenter = (lxInt == 128 && lyInt == 128 && rxInt == 128 && ryInt == 128)
                 val axesChanged = Math.abs(lxInt - lastLx) > 5 || Math.abs(lyInt - lastLy) > 5 || 
                                   Math.abs(rxInt - lastRx) > 5 || Math.abs(ryInt - lastRy) > 5
 
@@ -254,7 +256,9 @@ class MainActivity : ComponentActivity() {
                 }
                 return true
             } else {
-                if (axisY < -0.05f) {
+                // Robot Mode Analog Stick Control
+                val robotDeadzone = 0.10f
+                if (axisY < -robotDeadzone) {
                     isJoystickActive = true
                     val rawProportion = (-axisY).coerceIn(0f, 1f)
                     val precisionProportion = rawProportion * rawProportion
@@ -268,7 +272,7 @@ class MainActivity : ComponentActivity() {
                             dispatchClawAngle(targetAngle)
                         }
                     }
-                } else if (isJoystickActive && Math.abs(axisY) <= 0.05f) {
+                } else if (isJoystickActive && Math.abs(axisY) <= robotDeadzone) {
                     isJoystickActive = false
                     lastClawAngle = 0
                     dispatchClawAngle(0)
