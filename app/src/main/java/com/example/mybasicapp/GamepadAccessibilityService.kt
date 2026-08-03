@@ -128,7 +128,20 @@ class GamepadAccessibilityService : AccessibilityService() {
     }
 
     private fun dispatchPyCarCommand(act: String) {
-        val json = JSONObject().apply { put("action", act) }
+        val code = when(act) {
+            "stop" -> 1
+            "forward" -> 2
+            "backward", "back" -> 3
+            "left" -> 4
+            "right" -> 5
+            "light" -> 6
+            "line" -> 7
+            else -> 0
+        }
+        
+        // Output lightweight numerical representation for BLE speed efficiency
+        val json = if (code > 0) JSONObject().apply { put("a", code) } else JSONObject().apply { put("action", act) }
+
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand(json.toString())
         } else {
