@@ -1,3 +1,4 @@
+// BasicAPK/app/src/main/java/com/example/mybasicapp/GamepadAccessibilityService.kt
 package com.example.mybasicapp
 
 import android.accessibilityservice.AccessibilityService
@@ -130,8 +131,9 @@ class GamepadAccessibilityService : AccessibilityService() {
         val json = JSONObject().apply { put("action", act) }
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand(json.toString())
+        } else {
+            AppNetworkManager.sendHttpAsync("/", true, json)
         }
-        AppNetworkManager.sendHttpAsync("/", true, json)
     }
 
     private fun dispatchBleCommand(cmd: String) {

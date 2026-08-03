@@ -1,4 +1,4 @@
-// app/src/main/java/com/example/mybasicapp/MainActivity.kt
+// BasicAPK/app/src/main/java/com/example/mybasicapp/MainActivity.kt
 package com.example.mybasicapp
 
 import android.Manifest
@@ -252,8 +252,9 @@ class MainActivity : ComponentActivity() {
                     }
                     if (RobotBleController.isConnected) {
                         RobotBleController.sendBleCommand(json.toString())
+                    } else {
+                        AppNetworkManager.sendHttpAsync("/", true, json)
                     }
-                    AppNetworkManager.sendHttpAsync("/", true, json)
                 }
                 return true
             } else {
@@ -309,30 +310,34 @@ class MainActivity : ComponentActivity() {
         val json = JSONObject().apply { put("action", act) }
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand(json.toString())
+        } else {
+            AppNetworkManager.sendHttpAsync("/", true, json)
         }
-        AppNetworkManager.sendHttpAsync("/", true, json)
     }
 
     private fun dispatchClawCommand(command: String) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("claw:$command")
+        } else {
+            AppNetworkManager.sendHttpAsync("/claw?cmd=$command", isPost = false)
         }
-        AppNetworkManager.sendHttpAsync("/claw?cmd=$command", isPost = false)
     }
 
     private fun dispatchClawAngle(angle: Int) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("claw_angle:$angle")
+        } else {
+            AppNetworkManager.sendHttpAsync("/claw?angle=$angle", isPost = false)
         }
-        AppNetworkManager.sendHttpAsync("/claw?angle=$angle", isPost = false)
     }
 
     private fun dispatchRobotAction(action: String) {
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand("action:$action")
+        } else {
+            val json = JSONObject().apply { put("action", action) }
+            AppNetworkManager.sendHttpAsync("/action", isPost = true, payload = json)
         }
-        val json = JSONObject().apply { put("action", action) }
-        AppNetworkManager.sendHttpAsync("/action", isPost = true, payload = json)
     }
 
     private fun createNotificationChannel() {
@@ -345,7 +350,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun sendNotification(title: String, content: String) {
+    private void sendNotification(title: String, content: String) {
         val builder = NotificationCompat.Builder(this, "SENSOR_CHANNEL")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)

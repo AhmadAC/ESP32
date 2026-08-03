@@ -1,4 +1,4 @@
-// app/src/main/java/com/example/mybasicapp/MainScreen.kt
+// BasicAPK/app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
 import android.app.Activity
@@ -88,14 +88,13 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
 
     fun dispatchCommand(actionOrEndpoint: String, jsonPayload: JSONObject? = null) {
         if (RobotBleController.isConnected) {
-            val cmd = jsonPayload?.toString() ?: actionOrEndpoint
+            val cmd = if (jsonPayload != null && jsonPayload.length() > 0) jsonPayload.toString() else actionOrEndpoint
             RobotBleController.sendBleCommand(cmd)
+        } else {
+            val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
+            val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
+            AppNetworkManager.sendHttpAsync(endpoint, true, payload)
         }
-        
-        // Unconditional HTTP dispatch ensures AP Mode control works without manual HTTP toggling
-        val endpoint = if (actionOrEndpoint.startsWith("/")) actionOrEndpoint else "/action"
-        val payload = jsonPayload ?: JSONObject().apply { put("action", actionOrEndpoint) }
-        AppNetworkManager.sendHttpAsync(endpoint, true, payload)
     }
 
     LaunchedEffect(pendingServoPayload) {
@@ -103,8 +102,9 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
             delay(40)
             if (RobotBleController.isConnected) {
                 RobotBleController.sendBleCommand(it.toString())
+            } else {
+                AppNetworkManager.sendHttpAsync("/servo", true, it)
             }
-            AppNetworkManager.sendHttpAsync("/servo", true, it)
         }
     }
 
@@ -167,15 +167,6 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
     }
 
     fun sendGetRequest(endpoint: String) {
-        if (RobotBleController.isConnected && endpoint.contains("claw")) {
-            val cmdValue = endpoint.substringAfter("cmd=", "").substringBefore("&")
-            val angleValue = endpoint.substringAfter("angle=", "").substringBefore("&")
-            if (cmdValue.isNotEmpty()) {
-                RobotBleController.sendBleCommand("claw:$cmdValue")
-            } else if (angleValue.isNotEmpty()) {
-                RobotBleController.sendBleCommand("claw_angle:$angleValue")
-            }
-        }
         AppNetworkManager.sendHttpAsync(endpoint, false, null)
     }
 
@@ -513,14 +504,16 @@ fun MainScreen(hasAudioPermission: Boolean, hasLocationPermission: Boolean, onTr
                         onClawCommand = { cmd -> 
                             if (RobotBleController.isConnected) {
                                 RobotBleController.sendBleCommand("claw:$cmd")
+                            } else {
+                                sendGetRequest("/claw?cmd=$cmd") 
                             }
-                            sendGetRequest("/claw?cmd=$cmd") 
                         },
                         onClawAngle = { angle -> 
                             if (RobotBleController.isConnected) {
                                 RobotBleController.sendBleCommand("claw_angle:$angle")
+                            } else {
+                                sendGetRequest("/claw?angle=$angle") 
                             }
-                            sendGetRequest("/claw?angle=$angle") 
                         },
                         onSwitchMode = { mode ->
                             currentDevMode = mode
