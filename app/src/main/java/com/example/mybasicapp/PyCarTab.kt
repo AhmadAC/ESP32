@@ -1,40 +1,49 @@
-
 // app/src/main/java/com/example/mybasicapp/PyCarTab.kt
 package com.example.mybasicapp
 
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 
 @Composable
 fun PyCarDriveButton(text: String, actionCode: Int, modifier: Modifier = Modifier, onCommand: (JSONObject) -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    var isPressed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            onCommand(JSONObject().apply { put("a", actionCode) }) // Short numeric code to save MTU bytes
-        } else {
-            onCommand(JSONObject().apply { put("a", 1) }) // 1 = stop
-        }
+    // Use raw pointerInput for absolute touch lifecycle detection 
+    // This prevents ScrollViews from swallowing the continuous press interactions
+    val pointerInputModifier = Modifier.pointerInput(Unit) {
+        detectTapGestures(
+            onPress = {
+                isPressed = true
+                onCommand(JSONObject().apply { put("a", actionCode) }) // Short numeric code to save MTU bytes
+                try {
+                    tryAwaitRelease() // Block until the user lifts their finger
+                } finally {
+                    isPressed = false
+                    onCommand(JSONObject().apply { put("a", 1) }) // 1 = stop
+                }
+            }
+        )
     }
 
-    Button(
-        onClick = {}, // Handled inherently by Interaction Source
-        interactionSource = interactionSource,
-        colors = ButtonDefaults.buttonColors(containerColor = BtnBlue),
-        shape = RoundedCornerShape(10.dp),
-        modifier = modifier.height(60.dp)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(60.dp)
+            .background(if (isPressed) BtnPurple else BtnBlue, RoundedCornerShape(10.dp))
+            .then(pointerInputModifier)
     ) {
         Text(text, fontWeight = FontWeight.Bold, color = Color.White)
     }
