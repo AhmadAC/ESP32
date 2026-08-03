@@ -1,4 +1,5 @@
-// BasicAPK/app/src/main/java/com/example/mybasicapp/MainScreen.kt
+
+// app/src/main/java/com/example/mybasicapp/MainScreen.kt
 package com.example.mybasicapp
 
 import android.app.Activity

@@ -1,4 +1,5 @@
-// BasicAPK/app/src/main/java/com/example/mybasicapp/MainActivity.kt
+
+// app/src/main/java/com/example/mybasicapp/MainActivity.kt
 package com.example.mybasicapp
 
 import android.Manifest
@@ -139,41 +140,49 @@ class MainActivity : ComponentActivity() {
             } else {
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (event.keyCode) {
+                        // Switch Pro B Button (Close Claw / Stop Robot)
                         KeyEvent.KEYCODE_BUTTON_B -> {
                             dispatchClawCommand("close")
                             dispatchRobotAction("stop")
                             return true
                         }
+                        // Switch Pro A Button (Open Claw / Stand Robot)
                         KeyEvent.KEYCODE_BUTTON_A -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("stand")
                             return true
                         }
+                        // Switch Pro Y Button (Half Open Claw / Sit Robot)
                         KeyEvent.KEYCODE_BUTTON_Y -> {
                             dispatchClawCommand("half_open")
                             dispatchRobotAction("sit")
                             return true
                         }
+                        // Switch Pro X Button (Half Close Claw / Leap Robot)
                         KeyEvent.KEYCODE_BUTTON_X -> {
                             dispatchClawCommand("half_close")
                             dispatchRobotAction("leap_forward")
                             return true
                         }
+                        // Switch Pro L Button (Open Claw / Stretch Down)
                         KeyEvent.KEYCODE_BUTTON_L1 -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("stretch_down")
                             return true
                         }
+                        // Switch Pro R Button (Close Claw / Stretch Back)
                         KeyEvent.KEYCODE_BUTTON_R1 -> {
                             dispatchClawCommand("close")
                             dispatchRobotAction("stretch_back")
                             return true
                         }
+                        // Switch Pro ZL Button (Half Open Claw / Crawl)
                         KeyEvent.KEYCODE_BUTTON_L2 -> {
                             dispatchClawCommand("half_open")
                             dispatchRobotAction("crawl")
                             return true
                         }
+                        // D-Pad Controls
                         KeyEvent.KEYCODE_DPAD_UP -> {
                             dispatchClawCommand("open")
                             dispatchRobotAction("forward")
@@ -229,7 +238,7 @@ class MainActivity : ComponentActivity() {
                     lastLx = lxInt; lastLy = lyInt; lastRx = rxInt; lastRy = ryInt
                     lastBleTransmitTime = currentTime
                     
-                    // Sending highly optimized 41 byte BLE joystick telemetry using short char mappings
+                    // Sending highly optimized BLE joystick telemetry using tiny single-char keys
                     val json = JSONObject().apply {
                         put("x", lxInt)
                         put("y", lyInt)
@@ -302,9 +311,9 @@ class MainActivity : ComponentActivity() {
             else -> 0
         }
         
-        // This generates `{"a":2}` (7 bytes) instead of `{"action":"forward"}` (20 bytes)!
+        // Output lightweight numerical representation for BLE speed efficiency
         val json = if (code > 0) JSONObject().apply { put("a", code) } else JSONObject().apply { put("action", act) }
-        
+
         if (RobotBleController.isConnected) {
             RobotBleController.sendBleCommand(json.toString())
         } else {

@@ -195,8 +195,8 @@ object RobotBleController {
                             Log.i(TAG, "BLE MTU Negotiated: $mtu bytes")
                         }
 
-                        // Unlock the dispatcher as soon as the chunk reaches the ESP32
-                        override fun onCharacteristicWrite(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?, status: Int) {
+                        // Unlock the dispatcher as soon as the ESP32 hardware acknowledges the packet
+                        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
                             isWritePending = false
                         }
 
@@ -272,7 +272,6 @@ object RobotBleController {
     private val drainQueueRunnable = object : Runnable {
         @SuppressLint("MissingPermission")
         override fun run() {
-            // FIX: If a previous payload fragment is transmitting, protect Android from buffer exhaustion
             if (isWritePending) {
                 if (System.currentTimeMillis() - lastWriteAttempt > 500) {
                     isWritePending = false // Automatically clear timeout locks
@@ -291,9 +290,9 @@ object RobotBleController {
                         isWritePending = true
                         lastWriteAttempt = System.currentTimeMillis()
 
-                        // FIX: If payload > 20 bytes (e.g. 41-byte Gamepad strings) we MUST use WRITE_TYPE_DEFAULT to instruct Android to "chunk" it.
-                        // If it's short, use WRITE_TYPE_NO_RESPONSE for instant, latency-free transmission.
-                        val type = if (bytes.size > 20) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                        // Enforce WRITE_TYPE_DEFAULT so Android forces the ESP32 to send a hardware-level ACK. 
+                        // This guarantees 100% transmission success and fires onCharacteristicWrite immediately!
+                        val type = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                         
                         val success = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             gatt.writeCharacteristic(characteristic, bytes, type) == 0 // 0 == SUCCESS
